@@ -1,0 +1,29 @@
+---
+import DocsLayout from "../../../layouts/DocsLayout.astro";
+import { Code } from "astro-expressive-code/components";
+---
+
+<DocsLayout title="Observability">
+  <h1>Observability</h1>
+
+  <h2>Health</h2>
+  <p>The service implements standard gRPC health checking.</p>
+  <Code code={`grpc.health.v1.Health`} lang="text" />
+
+  <h2>Reflection</h2>
+  <p>Reflection is enabled so tools such as <code>grpcurl</code> can inspect the service.</p>
+  <Code code={`grpc.reflection.v1alpha.ServerReflection`} lang="text" />
+
+  <h2>Metrics</h2>
+  <Code code={`quota_requests_total{rpc,action,product,allowed,reason}
+quota_request_duration_ms{rpc,action,product}
+quota_denials_total{action,product,limit_id}
+quota_redis_errors_total
+quota_idempotency_hits_total
+quota_reservations_active
+quota_reservations_expired_total
+quota_leases_active
+quota_overages_total
+quota_event_emit_errors_total`} lang="text" />
+</DocsLayout>
+

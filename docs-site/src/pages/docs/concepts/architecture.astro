@@ -1,0 +1,44 @@
+---
+import DocsLayout from "../../../layouts/DocsLayout.astro";
+import { Code } from "astro-expressive-code/components";
+---
+
+<DocsLayout title="Architecture">
+  <h1>Architecture</h1>
+  <p>
+    The service is deployed independently per product. Every deployment owns
+    its Redis data, optional event sink, and runtime security boundary.
+  </p>
+
+  <Code code={`Product A -> quota-service -> Product A Redis -> Product A event sink
+Product B -> quota-service -> Product B Redis -> Product B event sink
+Product C -> quota-service -> Product C Redis -> Product C event sink`} lang="text" />
+
+  <h2>Shared across deployments</h2>
+  <ul>
+    <li>Docker image</li>
+    <li>gRPC API</li>
+    <li>protobuf schema</li>
+    <li>Redis scripts</li>
+    <li>documentation</li>
+  </ul>
+
+  <h2>Not shared across deployments</h2>
+  <ul>
+    <li>Redis counters</li>
+    <li>reservation and lease records</li>
+    <li>historical usage events</li>
+    <li>tenant, user, or customer data</li>
+  </ul>
+
+  <h2>Hot path</h2>
+  <ol>
+    <li>Check idempotency for the request ID.</li>
+    <li>Validate supplied limits.</li>
+    <li>Evaluate all limits in one Redis Lua script.</li>
+    <li>Deny without mutation if any limit fails.</li>
+    <li>Mutate all impacted keys when every limit allows.</li>
+    <li>Return a decision and per-limit statuses.</li>
+  </ol>
+</DocsLayout>
+

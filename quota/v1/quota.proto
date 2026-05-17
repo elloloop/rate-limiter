@@ -1,0 +1,379 @@
+syntax = "proto3";
+
+package quota.v1;
+
+option go_package = "github.com/elloloop/rate-limiter/gen/quota/v1;quotav1";
+
+service QuotaService {
+  rpc Consume(ConsumeRequest) returns (ConsumeResponse);
+
+  rpc Reserve(ReserveRequest) returns (ReserveResponse);
+  rpc FinalizeReservation(FinalizeReservationRequest) returns (FinalizeReservationResponse);
+  rpc ReleaseReservation(ReleaseReservationRequest) returns (ReleaseReservationResponse);
+
+  rpc AcquireLease(AcquireLeaseRequest) returns (AcquireLeaseResponse);
+  rpc RenewLease(RenewLeaseRequest) returns (RenewLeaseResponse);
+  rpc ReleaseLease(ReleaseLeaseRequest) returns (ReleaseLeaseResponse);
+
+  rpc Explain(ExplainRequest) returns (ExplainResponse);
+  rpc GetCurrentUsage(GetCurrentUsageRequest) returns (GetCurrentUsageResponse);
+
+  rpc ValidateLimits(ValidateLimitsRequest) returns (ValidateLimitsResponse);
+  rpc GetReservation(GetReservationRequest) returns (Reservation);
+  rpc GetLease(GetLeaseRequest) returns (Lease);
+  rpc GetRedisStatus(GetRedisStatusRequest) returns (RedisStatus);
+}
+
+message RequestContext {
+  string product = 1;
+  string environment = 2;
+  string region = 3;
+  string route = 4;
+
+  map<string, string> metadata = 10;
+}
+
+message RequestOptions {
+  bool dry_run = 1;
+  bool emit_event = 2;
+}
+
+message Decision {
+  bool allowed = 1;
+
+  string decision_id = 2;
+  DecisionReason reason = 3;
+  string message = 4;
+
+  int64 retry_after_ms = 5;
+
+  repeated LimitStatus limit_statuses = 6;
+
+  map<string, string> metadata = 7;
+}
+
+enum DecisionReason {
+  DECISION_REASON_UNSPECIFIED = 0;
+  DECISION_REASON_ALLOWED = 1;
+  DECISION_REASON_LIMIT_EXCEEDED = 2;
+  DECISION_REASON_CONCURRENCY_EXCEEDED = 3;
+  DECISION_REASON_INVALID_REQUEST = 4;
+  DECISION_REASON_SERVICE_UNAVAILABLE = 5;
+  DECISION_REASON_DRY_RUN = 6;
+}
+
+message LimitStatus {
+  string limit_id = 1;
+
+  string scope_key = 2;
+  string action = 3;
+  string unit = 4;
+
+  Algorithm algorithm = 5;
+  Window window = 6;
+
+  int64 limit = 7;
+  int64 used = 8;
+  int64 remaining = 9;
+  int64 cost = 10;
+
+  int64 reset_at_unix_ms = 11;
+  int64 retry_after_ms = 12;
+
+  bool allowed = 13;
+  string message = 14;
+}
+
+message Limit {
+  string limit_id = 1;
+
+  string scope_key = 2;
+  string action = 3;
+  string unit = 4;
+
+  Algorithm algorithm = 5;
+  Window window = 6;
+
+  int64 limit = 7;
+
+  int64 burst = 8;
+  double refill_rate_per_sec = 9;
+
+  bool refundable = 10;
+  ReservationExpiryPolicy reservation_expiry_policy = 11;
+
+  map<string, string> metadata = 12;
+}
+
+enum Algorithm {
+  ALGORITHM_UNSPECIFIED = 0;
+  ALGORITHM_FIXED_WINDOW_CALENDAR = 1;
+  ALGORITHM_FIXED_WINDOW_DURATION = 2;
+  ALGORITHM_SLIDING_WINDOW = 3;
+  ALGORITHM_TOKEN_BUCKET = 4;
+  ALGORITHM_LEAKY_BUCKET = 5;
+  ALGORITHM_GCRA = 6;
+  ALGORITHM_CONCURRENCY = 7;
+}
+
+message Window {
+  WindowType type = 1;
+  int64 duration_ms = 2;
+  int32 bucket_count = 3;
+  CalendarUnit calendar_unit = 4;
+  string timezone = 5;
+}
+
+enum WindowType {
+  WINDOW_TYPE_UNSPECIFIED = 0;
+  WINDOW_TYPE_CALENDAR = 1;
+  WINDOW_TYPE_DURATION = 2;
+  WINDOW_TYPE_SLIDING = 3;
+  WINDOW_TYPE_CONTINUOUS = 4;
+}
+
+enum CalendarUnit {
+  CALENDAR_UNIT_UNSPECIFIED = 0;
+  CALENDAR_UNIT_SECOND = 1;
+  CALENDAR_UNIT_MINUTE = 2;
+  CALENDAR_UNIT_HOUR = 3;
+  CALENDAR_UNIT_DAY = 4;
+  CALENDAR_UNIT_WEEK = 5;
+  CALENDAR_UNIT_MONTH = 6;
+  CALENDAR_UNIT_YEAR = 7;
+}
+
+enum ReservationExpiryPolicy {
+  RESERVATION_EXPIRY_POLICY_UNSPECIFIED = 0;
+  RESERVATION_EXPIRY_POLICY_CHARGE_FULL = 1;
+  RESERVATION_EXPIRY_POLICY_REFUND_FULL = 2;
+}
+
+message ConsumeRequest {
+  string request_id = 1;
+  RequestContext context = 2;
+  string action = 3;
+  int64 cost = 4;
+  repeated Limit limits = 5;
+  RequestOptions options = 6;
+}
+
+message ConsumeResponse {
+  Decision decision = 1;
+}
+
+message ReserveRequest {
+  string request_id = 1;
+  RequestContext context = 2;
+  string action = 3;
+  int64 reserve_cost = 4;
+  int64 reservation_ttl_ms = 5;
+  repeated Limit limits = 6;
+  RequestOptions options = 7;
+}
+
+message ReserveResponse {
+  Decision decision = 1;
+  Reservation reservation = 2;
+}
+
+message FinalizeReservationRequest {
+  string request_id = 1;
+  string reservation_id = 2;
+  int64 actual_cost = 3;
+  FinalizeStatus status = 4;
+  map<string, string> metadata = 5;
+}
+
+enum FinalizeStatus {
+  FINALIZE_STATUS_UNSPECIFIED = 0;
+  FINALIZE_STATUS_SUCCEEDED = 1;
+  FINALIZE_STATUS_FAILED = 2;
+  FINALIZE_STATUS_CANCELLED = 3;
+  FINALIZE_STATUS_UNKNOWN = 4;
+}
+
+message FinalizeReservationResponse {
+  string reservation_id = 1;
+  int64 reserved_cost = 2;
+  int64 actual_cost = 3;
+  int64 refunded_cost = 4;
+  int64 overage_cost = 5;
+  bool finalized = 6;
+}
+
+message ReleaseReservationRequest {
+  string request_id = 1;
+  string reservation_id = 2;
+  string reason = 3;
+}
+
+message ReleaseReservationResponse {
+  string reservation_id = 1;
+  int64 released_cost = 2;
+  bool released = 3;
+}
+
+message Reservation {
+  string reservation_id = 1;
+  string action = 2;
+  RequestContext context = 3;
+  int64 reserved_cost = 4;
+  int64 actual_cost = 5;
+  int64 refunded_cost = 6;
+  int64 overage_cost = 7;
+  int64 created_at_unix_ms = 8;
+  int64 expires_at_unix_ms = 9;
+  int64 finalized_at_unix_ms = 10;
+  ReservationStatus status = 11;
+  repeated ReservationImpact impacts = 12;
+  map<string, string> metadata = 13;
+}
+
+message ReservationImpact {
+  string limit_id = 1;
+  string scope_key = 2;
+  string redis_key = 3;
+  Algorithm algorithm = 4;
+  int64 reserved_cost = 5;
+  bool refundable = 6;
+  ReservationExpiryPolicy expiry_policy = 7;
+}
+
+enum ReservationStatus {
+  RESERVATION_STATUS_UNSPECIFIED = 0;
+  RESERVATION_STATUS_ACTIVE = 1;
+  RESERVATION_STATUS_FINALIZED = 2;
+  RESERVATION_STATUS_RELEASED = 3;
+  RESERVATION_STATUS_EXPIRED = 4;
+}
+
+message AcquireLeaseRequest {
+  string request_id = 1;
+  RequestContext context = 2;
+  string action = 3;
+  repeated Limit limits = 4;
+  int64 lease_ttl_ms = 5;
+  RequestOptions options = 6;
+}
+
+message AcquireLeaseResponse {
+  Decision decision = 1;
+  Lease lease = 2;
+}
+
+message RenewLeaseRequest {
+  string request_id = 1;
+  string lease_id = 2;
+  int64 extend_ttl_ms = 3;
+}
+
+message RenewLeaseResponse {
+  Lease lease = 1;
+  bool renewed = 2;
+}
+
+message ReleaseLeaseRequest {
+  string request_id = 1;
+  string lease_id = 2;
+}
+
+message ReleaseLeaseResponse {
+  string lease_id = 1;
+  bool released = 2;
+}
+
+message Lease {
+  string lease_id = 1;
+  string action = 2;
+  RequestContext context = 3;
+  int64 created_at_unix_ms = 4;
+  int64 expires_at_unix_ms = 5;
+  repeated LeaseImpact impacts = 6;
+  LeaseStatus status = 7;
+}
+
+message LeaseImpact {
+  string limit_id = 1;
+  string scope_key = 2;
+  string lease_set_key = 3;
+}
+
+enum LeaseStatus {
+  LEASE_STATUS_UNSPECIFIED = 0;
+  LEASE_STATUS_ACTIVE = 1;
+  LEASE_STATUS_RELEASED = 2;
+  LEASE_STATUS_EXPIRED = 3;
+}
+
+message ExplainRequest {
+  RequestContext context = 1;
+  string action = 2;
+  int64 cost = 3;
+  repeated Limit limits = 4;
+}
+
+message ExplainResponse {
+  bool would_allow = 1;
+  DecisionReason reason = 2;
+  string message = 3;
+  repeated LimitEvaluation evaluations = 4;
+}
+
+message LimitEvaluation {
+  string limit_id = 1;
+  bool valid = 2;
+  bool would_allow = 3;
+  LimitStatus current_status = 4;
+  repeated ValidationError validation_errors = 5;
+  repeated ValidationWarning validation_warnings = 6;
+}
+
+message GetCurrentUsageRequest {
+  RequestContext context = 1;
+  string action = 2;
+  repeated Limit limits = 3;
+}
+
+message GetCurrentUsageResponse {
+  repeated LimitStatus limit_statuses = 1;
+}
+
+message ValidateLimitsRequest {
+  repeated Limit limits = 1;
+}
+
+message ValidateLimitsResponse {
+  bool valid = 1;
+  repeated ValidationError errors = 2;
+  repeated ValidationWarning warnings = 3;
+}
+
+message ValidationError {
+  string limit_id = 1;
+  string field = 2;
+  string message = 3;
+}
+
+message ValidationWarning {
+  string limit_id = 1;
+  string field = 2;
+  string message = 3;
+}
+
+message GetReservationRequest {
+  string reservation_id = 1;
+}
+
+message GetLeaseRequest {
+  string lease_id = 1;
+}
+
+message GetRedisStatusRequest {}
+
+message RedisStatus {
+  bool reachable = 1;
+  string mode = 2;
+  int64 latency_ms = 3;
+  string message = 4;
+}

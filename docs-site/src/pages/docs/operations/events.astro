@@ -1,0 +1,47 @@
+---
+import DocsLayout from "../../../layouts/DocsLayout.astro";
+import { Code } from "astro-expressive-code/components";
+---
+
+<DocsLayout title="Events">
+  <h1>Events</h1>
+  <p>
+    Usage events are append-only facts emitted asynchronously. They are useful
+    for audit trails, offline analytics, and reconciliation, but the service
+    does not expose historical analytics APIs in v1.
+  </p>
+
+  <h2>Event types</h2>
+  <ul>
+    <li><code>quota.consumed</code></li>
+    <li><code>quota.denied</code></li>
+    <li><code>quota.reserved</code></li>
+    <li><code>quota.reservation_finalized</code></li>
+    <li><code>quota.reservation_released</code></li>
+    <li><code>quota.lease_acquired</code></li>
+    <li><code>quota.lease_renewed</code></li>
+    <li><code>quota.lease_released</code></li>
+  </ul>
+
+  <h2>Example</h2>
+  <Code code={`{
+  "event_type": "quota.consumed",
+  "timestamp": "2026-05-17T12:00:00Z",
+  "request_id": "req_123",
+  "decision_id": "dec_456",
+  "product": "workspace",
+  "environment": "prod",
+  "action": "workspace.email.recipients",
+  "unit": "recipients",
+  "cost": 25,
+  "allowed": true,
+  "limit_statuses": [{
+    "limit_id": "user_email_daily",
+    "scope_key": "user:user_123",
+    "limit": 500,
+    "used": 25,
+    "remaining": 475
+  }]
+}`} lang="json" />
+</DocsLayout>
+

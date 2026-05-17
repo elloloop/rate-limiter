@@ -1,0 +1,38 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+---
+
+<DocsLayout title="What It Is">
+  <h1>What It Is</h1>
+  <p>
+    Rate Limiter is a reusable enforcement engine for quotas, rate limits, and
+    active concurrency. It accepts the limits a caller already decided should
+    apply and enforces them atomically in Redis.
+  </p>
+
+  <h2>Caller responsibilities</h2>
+  <ul>
+    <li>Know the business rules.</li>
+    <li>Know the user, organization, workspace, or provider context.</li>
+    <li>Convert plans and contracts into concrete <code>Limit</code> messages.</li>
+    <li>Pass those limits on every request.</li>
+  </ul>
+
+  <h2>Service responsibilities</h2>
+  <ul>
+    <li>Validate supplied limits.</li>
+    <li>Evaluate algorithms and windows.</li>
+    <li>Read and mutate Redis counters atomically.</li>
+    <li>Return decisions, usage state, retry hints, and debug explanations.</li>
+    <li>Emit append-only usage events when configured.</li>
+  </ul>
+
+  <h2>Opaque fields</h2>
+  <p>
+    <code>scope_key</code>, <code>action</code>, and <code>unit</code> are
+    opaque strings. Examples include <code>user:user_123</code>,
+    <code>assistant.llm.tokens</code>, and <code>tokens</code>. The service
+    stores and returns them but does not interpret their business meaning.
+  </p>
+</DocsLayout>
+

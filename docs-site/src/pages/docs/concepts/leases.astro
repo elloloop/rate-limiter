@@ -1,0 +1,30 @@
+---
+import DocsLayout from "../../../layouts/DocsLayout.astro";
+---
+
+<DocsLayout title="Leases">
+  <h1>Leases</h1>
+  <p>
+    Leases enforce active concurrency. Use them for operations such as active
+    LLM calls, exports, payroll runs, or code execution slots.
+  </p>
+
+  <h2>Acquire</h2>
+  <p>
+    <code>AcquireLease</code> accepts only <code>ALGORITHM_CONCURRENCY</code>
+    limits. It removes expired leases, checks active counts, and creates a
+    lease across all supplied limits if capacity exists.
+  </p>
+
+  <h2>Renew</h2>
+  <p>
+    <code>RenewLease</code> extends the TTL for long-running operations.
+  </p>
+
+  <h2>Release</h2>
+  <p>
+    <code>ReleaseLease</code> removes the lease from all impacted sorted sets.
+    It is safe to retry with the same request ID.
+  </p>
+</DocsLayout>
+

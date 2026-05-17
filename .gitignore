@@ -1,0 +1,11 @@
+.DS_Store
+.idea/
+.vscode/
+
+bin/
+coverage.out
+dist/
+docs-site/dist/
+
+*.log
+*.tmp

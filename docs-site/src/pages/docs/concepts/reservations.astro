@@ -1,0 +1,38 @@
+---
+import DocsLayout from "../../../layouts/DocsLayout.astro";
+---
+
+<DocsLayout title="Reservations">
+  <h1>Reservations</h1>
+  <p>
+    Reservations are for actions where cost is estimated before work starts,
+    such as LLM token generation or long-running export jobs.
+  </p>
+
+  <h2>Reserve</h2>
+  <p>
+    <code>Reserve</code> consumes <code>reserve_cost</code> immediately and
+    stores a reservation record containing the exact Redis keys touched.
+  </p>
+
+  <h2>Finalize</h2>
+  <p>
+    <code>FinalizeReservation</code> records actual cost. If actual cost is
+    lower than reserved cost, refundable impacts are refunded. If actual cost
+    is higher, overage is recorded but the original operation is not failed
+    retroactively.
+  </p>
+
+  <h2>Release</h2>
+  <p>
+    <code>ReleaseReservation</code> is used when the operation definitely did
+    not happen. Active refundable impacts are released idempotently.
+  </p>
+
+  <h2>Important invariant</h2>
+  <p>
+    Finalization and release use <code>ReservationImpact.redis_key</code>.
+    They must not recompute the current window key from wall-clock time.
+  </p>
+</DocsLayout>
+

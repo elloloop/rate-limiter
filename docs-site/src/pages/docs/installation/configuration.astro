@@ -1,0 +1,33 @@
+---
+import DocsLayout from "../../../layouts/DocsLayout.astro";
+---
+
+<DocsLayout title="Configuration">
+  <h1>Configuration</h1>
+  <p>All runtime configuration is supplied through environment variables.</p>
+
+  <table>
+    <tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+    <tr><td><code>QUOTA_PRODUCT</code></td><td><code>default</code></td><td>Default product namespace for Redis keys.</td></tr>
+    <tr><td><code>QUOTA_ENVIRONMENT</code></td><td><code>local</code></td><td>Default environment namespace for Redis keys.</td></tr>
+    <tr><td><code>QUOTA_GRPC_BIND_ADDR</code></td><td><code>0.0.0.0:8080</code></td><td>gRPC listener.</td></tr>
+    <tr><td><code>QUOTA_REDIS_URL</code></td><td><code>redis://localhost:6379/0</code></td><td>Redis connection URL.</td></tr>
+    <tr><td><code>QUOTA_REDIS_MODE</code></td><td><code>single_primary</code></td><td>Only supported Redis topology in v1.</td></tr>
+    <tr><td><code>QUOTA_EVENT_SINK</code></td><td><code>none</code></td><td><code>none</code>, <code>stdout</code>, or <code>postgres</code>.</td></tr>
+    <tr><td><code>QUOTA_EVENT_DATABASE_URL</code></td><td></td><td>Postgres URL for usage events.</td></tr>
+    <tr><td><code>QUOTA_METRICS_BIND_ADDR</code></td><td><code>0.0.0.0:9090</code></td><td>Prometheus metrics listener.</td></tr>
+    <tr><td><code>QUOTA_TLS_ENABLED</code></td><td><code>false</code></td><td>Enable TLS for gRPC.</td></tr>
+    <tr><td><code>QUOTA_TLS_CERT_FILE</code></td><td><code>/etc/quota/tls/server.crt</code></td><td>Server certificate path.</td></tr>
+    <tr><td><code>QUOTA_TLS_KEY_FILE</code></td><td><code>/etc/quota/tls/server.key</code></td><td>Server key path.</td></tr>
+    <tr><td><code>QUOTA_MTLS_ENABLED</code></td><td><code>false</code></td><td>Require client certs for transport security.</td></tr>
+    <tr><td><code>QUOTA_MTLS_CLIENT_CA_FILE</code></td><td><code>/etc/quota/tls/client-ca.crt</code></td><td>Client CA path.</td></tr>
+    <tr><td><code>QUOTA_LOG_LEVEL</code></td><td><code>info</code></td><td>Structured log level.</td></tr>
+  </table>
+
+  <h2>No auth config</h2>
+  <p>
+    There are no JWT, API key, RBAC, tenant auth, or user auth settings. Those
+    controls belong outside this service.
+  </p>
+</DocsLayout>
+

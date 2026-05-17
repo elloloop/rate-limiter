@@ -1,0 +1,30 @@
+---
+import DocsLayout from "../../../layouts/DocsLayout.astro";
+---
+
+<DocsLayout title="Kubernetes">
+  <h1>Kubernetes</h1>
+  <p>
+    Deploy one service instance per product or environment. Keep Redis isolated
+    unless the owning product intentionally shares a quota namespace.
+  </p>
+
+  <h2>Network boundary</h2>
+  <p>
+    Expose the gRPC port only to trusted callers through NetworkPolicy,
+    service mesh policy, private load balancers, or equivalent controls.
+  </p>
+
+  <h2>TLS and mTLS</h2>
+  <p>
+    TLS and mTLS are transport security features only. They do not replace
+    product authorization, entitlement checks, or business policy decisions.
+  </p>
+
+  <h2>Redis</h2>
+  <p>
+    Use Redis single-primary or primary-replica topology. Redis Cluster is out
+    of scope for v1.
+  </p>
+</DocsLayout>
+

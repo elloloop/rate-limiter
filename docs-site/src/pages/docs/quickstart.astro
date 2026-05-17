@@ -1,0 +1,44 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+import { Code } from "astro-expressive-code/components";
+---
+
+<DocsLayout title="Quick Start">
+  <h1>Quick Start</h1>
+  <p>Start Redis and the quota service locally, then inspect service health.</p>
+
+  <h2>1. Start the stack</h2>
+  <Code code={`docker compose up -d --build`} lang="bash" />
+
+  <h2>2. Check Redis readiness</h2>
+  <Code code={`grpcurl -plaintext localhost:28080 \\
+  quota.v1.QuotaService/GetRedisStatus '{}'`} lang="bash" />
+
+  <h2>3. Validate an example limit file</h2>
+  <Code code={`docker compose run --rm quota-service \\
+  quota-service validate-limits /app/examples/limits/workspace-email.yaml`} lang="bash" />
+
+  <h2>4. Make a known-cost decision</h2>
+  <Code code={`grpcurl -plaintext -d '{
+  "request_id": "req_email_123",
+  "context": {"product": "workspace", "environment": "local"},
+  "action": "workspace.email.recipients",
+  "cost": 25,
+  "limits": [{
+    "limit_id": "user_email_recipients_daily",
+    "scope_key": "user:user_123",
+    "action": "workspace.email.recipients",
+    "unit": "recipients",
+    "algorithm": "ALGORITHM_FIXED_WINDOW_CALENDAR",
+    "window": {
+      "type": "WINDOW_TYPE_CALENDAR",
+      "calendar_unit": "CALENDAR_UNIT_DAY",
+      "timezone": "UTC"
+    },
+    "limit": 500
+  }]
+}' localhost:28080 quota.v1.QuotaService/Consume`} lang="bash" />
+
+  <h2>5. Inspect metrics</h2>
+  <Code code={`curl -s http://localhost:29090/metrics | head`} lang="bash" />
+</DocsLayout>

@@ -1,0 +1,81 @@
+---
+import DocsLayout from "../layouts/DocsLayout.astro";
+
+const popular = [
+  {
+    title: "Quick Start",
+    description: "Run Redis and the quota service locally.",
+    href: "/rate-limiter/docs/quickstart",
+  },
+  {
+    title: "Configuration",
+    description: "Every QUOTA_* environment variable.",
+    href: "/rate-limiter/docs/installation/configuration",
+  },
+  {
+    title: "Architecture",
+    description: "Caller-owned policy, quota math inside.",
+    href: "/rate-limiter/docs/concepts/architecture",
+  },
+  {
+    title: "gRPC Reference",
+    description: "Every RPC and core message.",
+    href: "/rate-limiter/docs/api-reference/grpc",
+  },
+  {
+    title: "Redis Model",
+    description: "Key model, scripts, and topology constraints.",
+    href: "/rate-limiter/docs/concepts/redis",
+  },
+  {
+    title: "GitHub repository",
+    description: "Source, issues, releases.",
+    href: "https://github.com/elloloop/rate-limiter",
+  },
+];
+---
+
+<DocsLayout
+  title="Page not found"
+  hidePrevNext
+  hideBreadcrumbs
+  lastUpdated=""
+>
+  <div class="py-8">
+    <p
+      class="font-mono text-[12px] font-semibold uppercase tracking-[0.2em] text-primary"
+    >
+      Error 404
+    </p>
+    <h1 class="!mt-3 !text-5xl">Page not found</h1>
+    <p class="text-lg text-muted-foreground">
+      The page you're looking for doesn't exist or has been moved.
+    </p>
+
+    <h2 class="!mt-12 !border-b-0 !pb-0">Popular destinations</h2>
+    <div class="mt-4 grid gap-3 sm:grid-cols-2">
+      {
+        popular.map((item) => (
+          <a
+            href={item.href}
+            class="group block rounded-lg border border-border bg-card p-4 no-underline transition-colors hover:border-primary/40 hover:bg-muted/40"
+            style="text-decoration: none;"
+          >
+            <div class="font-semibold text-foreground transition-colors group-hover:text-primary">
+              {item.title}
+            </div>
+            <div class="mt-1 text-sm text-muted-foreground">
+              {item.description}
+            </div>
+          </a>
+        ))
+      }
+    </div>
+  </div>
+</DocsLayout>
+
+<style>
+  :global(article.prose [data-last-updated]) {
+    display: none;
+  }
+</style>

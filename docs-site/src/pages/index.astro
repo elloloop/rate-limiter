@@ -1,0 +1,55 @@
+---
+import DocsLayout from "../layouts/DocsLayout.astro";
+import { Code } from "astro-expressive-code/components";
+---
+
+<DocsLayout title="Introduction" hidePrevNext>
+  <h1>Rate Limiter</h1>
+  <p>
+    A generic quota and rate limiting service. Callers pass concrete limits on
+    each gRPC request; the service evaluates those limits against Redis-backed
+    counters and returns an allow or deny decision.
+  </p>
+
+  <h2>Core boundary</h2>
+  <Code code={`Business rules outside.
+Quota math inside.`} lang="text" />
+  <p>
+    Products decide which limits apply. Rate Limiter knows algorithms,
+    windows, Redis counters, reservations, concurrency leases, idempotency, and
+    usage events.
+  </p>
+
+  <h2>What it supports</h2>
+  <ul>
+    <li>Known-cost consumption with atomic counter mutations</li>
+    <li>Estimated-cost reservations with finalization and release</li>
+    <li>Concurrency leases backed by Redis sorted sets</li>
+    <li>Fixed calendar, fixed duration, sliding, token bucket, leaky bucket, and GCRA algorithms</li>
+    <li>Idempotent mutating RPCs through caller-supplied request IDs</li>
+    <li>gRPC health, reflection, Redis status, and Prometheus metrics</li>
+    <li>Append-only usage events to none, stdout, or Postgres</li>
+  </ul>
+
+  <h2>What it does not own</h2>
+  <ul>
+    <li>Product plans, pricing, contracts, or entitlements</li>
+    <li>User profiles, tenant profiles, or customer records</li>
+    <li>Application-layer auth, JWT validation, API keys, or RBAC</li>
+    <li>Admin rule CRUD APIs or a persistent business rule store in v1</li>
+    <li>Historical analytics APIs or billing reports</li>
+  </ul>
+
+  <h2>Run locally</h2>
+  <Code code={`docker compose up -d --build
+grpcurl -plaintext localhost:28080 quota.v1.QuotaService/GetRedisStatus '{}'
+curl -s http://localhost:29090/metrics | head`} lang="bash" />
+
+  <h2>Where to next</h2>
+  <ul>
+    <li><a href="/rate-limiter/docs/quickstart">Quick Start</a></li>
+    <li><a href="/rate-limiter/docs/concepts/architecture">Architecture</a></li>
+    <li><a href="/rate-limiter/docs/api-reference/grpc">gRPC Reference</a></li>
+    <li><a href="/rate-limiter/docs/concepts/redis">Redis Model</a></li>
+  </ul>
+</DocsLayout>

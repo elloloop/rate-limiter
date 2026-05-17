@@ -1,0 +1,50 @@
+---
+import DocsLayout from "../../../layouts/DocsLayout.astro";
+import { Code } from "astro-expressive-code/components";
+---
+
+<DocsLayout title="gRPC Service">
+  <h1>gRPC Service</h1>
+  <p>The source of truth is <code>quota/v1/quota.proto</code>.</p>
+
+  <Code code={`service QuotaService {
+  rpc Consume(ConsumeRequest) returns (ConsumeResponse);
+  rpc Reserve(ReserveRequest) returns (ReserveResponse);
+  rpc FinalizeReservation(FinalizeReservationRequest) returns (FinalizeReservationResponse);
+  rpc ReleaseReservation(ReleaseReservationRequest) returns (ReleaseReservationResponse);
+  rpc AcquireLease(AcquireLeaseRequest) returns (AcquireLeaseResponse);
+  rpc RenewLease(RenewLeaseRequest) returns (RenewLeaseResponse);
+  rpc ReleaseLease(ReleaseLeaseRequest) returns (ReleaseLeaseResponse);
+  rpc Explain(ExplainRequest) returns (ExplainResponse);
+  rpc GetCurrentUsage(GetCurrentUsageRequest) returns (GetCurrentUsageResponse);
+  rpc ValidateLimits(ValidateLimitsRequest) returns (ValidateLimitsResponse);
+  rpc GetReservation(GetReservationRequest) returns (Reservation);
+  rpc GetLease(GetLeaseRequest) returns (Lease);
+  rpc GetRedisStatus(GetRedisStatusRequest) returns (RedisStatus);
+}`} lang="proto" />
+
+  <h2>Consume</h2>
+  <p>
+    Known-cost actions. If any limit denies, no counters are mutated.
+  </p>
+
+  <h2>Reserve and finalize</h2>
+  <p>
+    Estimated-cost actions. A reservation records exact Redis impact keys so
+    finalization and release do not recompute current windows.
+  </p>
+
+  <h2>Lease operations</h2>
+  <p>
+    Active concurrency through <code>AcquireLease</code>,
+    <code>RenewLease</code>, and <code>ReleaseLease</code>.
+  </p>
+
+  <h2>Inspection</h2>
+  <p>
+    <code>Explain</code>, <code>GetCurrentUsage</code>,
+    <code>ValidateLimits</code>, <code>GetReservation</code>,
+    <code>GetLease</code>, and <code>GetRedisStatus</code> are read-oriented
+    support RPCs.
+  </p>
+</DocsLayout>

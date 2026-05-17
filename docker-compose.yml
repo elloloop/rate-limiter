@@ -1,0 +1,35 @@
+services:
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  quota-service:
+    build:
+      context: .
+      target: server
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      QUOTA_PRODUCT: workspace
+      QUOTA_ENVIRONMENT: local
+      QUOTA_GRPC_BIND_ADDR: 0.0.0.0:8080
+      QUOTA_REDIS_URL: redis://redis:6379/0
+      QUOTA_REDIS_MODE: single_primary
+      QUOTA_EVENT_SINK: stdout
+      QUOTA_METRICS_BIND_ADDR: 0.0.0.0:9090
+      QUOTA_LOG_LEVEL: info
+    ports:
+      - "28080:8080"
+      - "29090:9090"
+
+volumes:
+  redis-data:

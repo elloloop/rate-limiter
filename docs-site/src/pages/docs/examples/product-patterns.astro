@@ -1,0 +1,50 @@
+---
+import DocsLayout from "../../../layouts/DocsLayout.astro";
+import { Code } from "astro-expressive-code/components";
+---
+
+<DocsLayout title="Product Patterns">
+  <h1>Product Patterns</h1>
+
+  <h2>Workspace email</h2>
+  <Code code={`{
+  "action": "workspace.email.recipients",
+  "cost": 25,
+  "limits": [{
+    "limit_id": "user_email_recipients_daily",
+    "scope_key": "user:user_123",
+    "unit": "recipients",
+    "algorithm": "ALGORITHM_FIXED_WINDOW_CALENDAR",
+    "window": {"type": "WINDOW_TYPE_CALENDAR", "calendar_unit": "CALENDAR_UNIT_DAY", "timezone": "UTC"},
+    "limit": 500
+  }]
+}`} lang="json" />
+
+  <h2>Education downloads</h2>
+  <Code code={`{
+  "action": "education.download.bytes",
+  "cost": 314572800,
+  "limits": [{
+    "limit_id": "user_download_bytes_daily",
+    "scope_key": "user:user_123",
+    "unit": "bytes",
+    "algorithm": "ALGORITHM_FIXED_WINDOW_CALENDAR",
+    "window": {"type": "WINDOW_TYPE_CALENDAR", "calendar_unit": "CALENDAR_UNIT_DAY", "timezone": "UTC"},
+    "limit": 2147483648
+  }]
+}`} lang="json" />
+
+  <h2>Assistant LLM concurrency</h2>
+  <Code code={`{
+  "action": "assistant.llm.concurrent",
+  "lease_ttl_ms": 120000,
+  "limits": [{
+    "limit_id": "user_llm_concurrency",
+    "scope_key": "user:user_123",
+    "unit": "requests",
+    "algorithm": "ALGORITHM_CONCURRENCY",
+    "limit": 3
+  }]
+}`} lang="json" />
+</DocsLayout>
+

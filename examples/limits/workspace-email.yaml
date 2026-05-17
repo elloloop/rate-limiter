@@ -1,0 +1,22 @@
+limits:
+  - limit_id: user_email_recipients_daily
+    scope_key: user:user_123
+    action: workspace.email.recipients
+    unit: recipients
+    algorithm: ALGORITHM_FIXED_WINDOW_CALENDAR
+    window:
+      type: WINDOW_TYPE_CALENDAR
+      calendar_unit: CALENDAR_UNIT_DAY
+      timezone: UTC
+    limit: 500
+  - limit_id: org_email_recipients_daily
+    scope_key: org:org_456
+    action: workspace.email.recipients
+    unit: recipients
+    algorithm: ALGORITHM_FIXED_WINDOW_CALENDAR
+    window:
+      type: WINDOW_TYPE_CALENDAR
+      calendar_unit: CALENDAR_UNIT_DAY
+      timezone: UTC
+    limit: 100000
+

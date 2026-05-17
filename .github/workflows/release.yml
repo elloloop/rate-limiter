@@ -1,0 +1,179 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  GO_VERSION: '1.26.3'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Release Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: go test
+        env:
+          QUOTA_TEST_REDIS_URL: redis://localhost:6379/0
+        run: go test -race -count=1 ./...
+
+  docker-smoke:
+    name: Docker Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          target: server
+          push: false
+          load: true
+          tags: rate-limiter:release-smoke
+
+  build-and-push:
+    name: Build and Push Image
+    runs-on: ubuntu-latest
+    needs: [test, docker-smoke]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      tags: ${{ steps.meta.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Inject version from git tag
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          echo "$VER" > VERSION
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ !contains(github.ref, '-') }}
+            type=sha,prefix=sha-
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          target: server
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          sbom: true
+          provenance: mode=max
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+
+  release-artifacts:
+    name: GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-and-push]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build proto archives
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VER="${VERSION#v}"
+          mkdir -p dist
+          tar -czf "dist/rate-limiter-protos-${VER}.tar.gz" quota buf.yaml buf.gen.yaml
+          zip -r "dist/rate-limiter-protos-${VER}.zip" quota buf.yaml buf.gen.yaml
+          (cd dist && sha256sum \
+            "rate-limiter-protos-${VER}.tar.gz" \
+            "rate-limiter-protos-${VER}.zip" \
+            > "rate-limiter-protos-${VER}.sha256")
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          DIGEST: ${{ needs.build-and-push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          VER="${VERSION#v}"
+          notes_file="$(mktemp)"
+          {
+            echo "## Container image"
+            echo
+            echo "\`${IMAGE}:${VER}\`"
+            echo
+            echo "Digest: \`${DIGEST}\`"
+            echo
+            echo "## Proto bundle"
+            echo
+            echo "The proto archives contain the quota/v1 protobuf contract from this tag."
+          } > "$notes_file"
+
+          gh release create "$VERSION" \
+            --title "$VERSION" \
+            --notes-file "$notes_file" \
+            "dist/rate-limiter-protos-${VER}.tar.gz" \
+            "dist/rate-limiter-protos-${VER}.zip" \
+            "dist/rate-limiter-protos-${VER}.sha256"
+
+  docs:
+    name: Rebuild docs on release
+    needs: [release-artifacts]
+    uses: ./.github/workflows/docs.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write

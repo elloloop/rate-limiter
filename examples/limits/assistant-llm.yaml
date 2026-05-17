@@ -1,0 +1,38 @@
+limits:
+  - limit_id: user_daily_tokens
+    scope_key: user:user_123
+    action: assistant.llm.tokens
+    unit: tokens
+    algorithm: ALGORITHM_FIXED_WINDOW_CALENDAR
+    window:
+      type: WINDOW_TYPE_CALENDAR
+      calendar_unit: CALENDAR_UNIT_DAY
+      timezone: UTC
+    limit: 500000
+    refundable: true
+    reservation_expiry_policy: RESERVATION_EXPIRY_POLICY_CHARGE_FULL
+  - limit_id: org_monthly_tokens
+    scope_key: org:org_456
+    action: assistant.llm.tokens
+    unit: tokens
+    algorithm: ALGORITHM_FIXED_WINDOW_CALENDAR
+    window:
+      type: WINDOW_TYPE_CALENDAR
+      calendar_unit: CALENDAR_UNIT_MONTH
+      timezone: UTC
+    limit: 20000000
+    refundable: true
+    reservation_expiry_policy: RESERVATION_EXPIRY_POLICY_CHARGE_FULL
+  - limit_id: openai_tpm
+    scope_key: provider:openai
+    action: assistant.llm.tokens
+    unit: tokens
+    algorithm: ALGORITHM_TOKEN_BUCKET
+    window:
+      type: WINDOW_TYPE_CONTINUOUS
+      duration_ms: 60000
+    limit: 500000
+    burst: 500000
+    refill_rate_per_sec: 8333.33
+    refundable: false
+

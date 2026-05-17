@@ -1,0 +1,38 @@
+---
+import DocsLayout from "../../../layouts/DocsLayout.astro";
+---
+
+<DocsLayout title="Limits">
+  <h1>Limits</h1>
+  <p>
+    A limit is a concrete enforcement rule supplied by the caller on each RPC.
+    It combines a scope, action, unit, algorithm, window, and numeric limit.
+  </p>
+
+  <h2>Scope key</h2>
+  <p>
+    The identity being counted. Examples: <code>user:user_123</code>,
+    <code>org:org_456</code>, <code>ip:203.0.113.10</code>,
+    <code>provider:openai</code>.
+  </p>
+
+  <h2>Action</h2>
+  <p>
+    The usage dimension. Examples: <code>workspace.email.recipients</code>,
+    <code>education.download.bytes</code>, <code>assistant.llm.tokens</code>.
+  </p>
+
+  <h2>Cost</h2>
+  <p>
+    The amount to consume or reserve. The service treats cost as an integer and
+    does not infer units.
+  </p>
+
+  <h2>Validation</h2>
+  <p>
+    Required fields are <code>limit_id</code>, <code>scope_key</code>,
+    <code>action</code>, <code>unit</code>, <code>algorithm</code>, and a
+    positive <code>limit</code>. Window fields depend on the algorithm.
+  </p>
+</DocsLayout>
+

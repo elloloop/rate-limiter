@@ -1,0 +1,39 @@
+---
+import DocsLayout from "../../../layouts/DocsLayout.astro";
+import { Code } from "astro-expressive-code/components";
+---
+
+<DocsLayout title="Redis Model">
+  <h1>Redis Model</h1>
+  <p>
+    V1 supports Redis single-primary or primary-replica topology. Redis Cluster
+    is not supported because decisions may touch arbitrary keys that must be
+    evaluated and mutated atomically in one Lua script.
+  </p>
+
+  <h2>Prefix</h2>
+  <Code code={`quota:v1:{environment}:{product}:`} lang="text" />
+
+  <h2>Key families</h2>
+  <Code code={`req:{request_id}
+fw:{limit_id_hash}:{scope_hash}:{window_id}
+sw:{limit_id_hash}:{scope_hash}:{bucket_id}
+tb:{limit_id_hash}:{scope_hash}
+lb:{limit_id_hash}:{scope_hash}
+gcra:{limit_id_hash}:{scope_hash}
+res:{reservation_id}
+lease_set:{limit_id_hash}:{scope_hash}
+lease:{lease_id}`} lang="text" />
+
+  <h2>Lua scripts</h2>
+  <ul>
+    <li><code>consume.lua</code></li>
+    <li><code>reserve.lua</code></li>
+    <li><code>finalize_reservation.lua</code></li>
+    <li><code>release_reservation.lua</code></li>
+    <li><code>acquire_lease.lua</code></li>
+    <li><code>renew_lease.lua</code></li>
+    <li><code>release_lease.lua</code></li>
+  </ul>
+</DocsLayout>
+

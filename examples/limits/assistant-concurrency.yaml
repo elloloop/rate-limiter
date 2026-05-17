@@ -1,0 +1,8 @@
+limits:
+  - limit_id: user_llm_concurrency
+    scope_key: user:user_123
+    action: assistant.llm.concurrent
+    unit: requests
+    algorithm: ALGORITHM_CONCURRENCY
+    limit: 3
+

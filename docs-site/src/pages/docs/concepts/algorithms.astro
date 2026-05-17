@@ -1,0 +1,49 @@
+---
+import DocsLayout from "../../../layouts/DocsLayout.astro";
+---
+
+<DocsLayout title="Algorithms">
+  <h1>Algorithms</h1>
+  <p>V1 supports the algorithms needed for quotas, smooth rate limits, and active concurrency.</p>
+
+  <h2>Fixed calendar window</h2>
+  <p>
+    Aligned UTC minute, hour, day, week, or month windows. Use for daily,
+    weekly, and monthly quotas.
+  </p>
+
+  <h2>Fixed duration window</h2>
+  <p>
+    Epoch-aligned buckets such as every 60 seconds or 3600 seconds.
+  </p>
+
+  <h2>Sliding window</h2>
+  <p>
+    Approximate rolling windows implemented through buckets. The default
+    bucket count is 10.
+  </p>
+
+  <h2>Token bucket</h2>
+  <p>
+    Smooth rate limiting with burst capacity and continuous refill.
+  </p>
+
+  <h2>Leaky bucket</h2>
+  <p>
+    Steady drain behavior using capacity and drain rate. V1 treats this as a
+    bucket-style limiter with the leaky bucket key namespace.
+  </p>
+
+  <h2>GCRA</h2>
+  <p>
+    Generic Cell Rate Algorithm using theoretical arrival time for smooth
+    request spacing.
+  </p>
+
+  <h2>Concurrency</h2>
+  <p>
+    Active leases stored in Redis sorted sets. Expired leases are removed
+    before capacity checks.
+  </p>
+</DocsLayout>
+
