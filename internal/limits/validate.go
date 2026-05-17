@@ -11,6 +11,13 @@ func Validate(action string, supplied []*quotav1.Limit) ([]*quotav1.ValidationEr
 	var warnings []*quotav1.ValidationWarning
 	seen := map[string]struct{}{}
 
+	if len(supplied) == 0 {
+		return []*quotav1.ValidationError{{
+			Field:   "limits",
+			Message: "at least one limit is required",
+		}}, warnings
+	}
+
 	for i, limit := range supplied {
 		id := limit.GetLimitId()
 		if id == "" {

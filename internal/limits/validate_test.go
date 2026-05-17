@@ -29,6 +29,11 @@ func TestValidateAcceptsFixedCalendarDay(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsEmptyLimitSet(t *testing.T) {
+	errs, _ := Validate("assistant.llm.tokens", nil)
+	assertFieldError(t, errs, "limits")
+}
+
 func TestValidateRejectsBusinessMismatchedAction(t *testing.T) {
 	errs, _ := Validate("workspace.email.recipients", []*quotav1.Limit{{
 		LimitId:   "user_daily_tokens",

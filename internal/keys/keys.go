@@ -44,7 +44,7 @@ func LeaseSet(prefix string, limit *quotav1.Limit) string {
 func FixedWindow(prefix string, limit *quotav1.Limit, now time.Time) (key string, resetAt time.Time, ttl time.Duration) {
 	windowID, reset := calendarWindow(limit.GetWindow().GetCalendarUnit(), now.UTC())
 	key = prefix + "fw:" + Hash(limit.GetLimitId()) + ":" + Hash(limit.GetScopeKey()) + ":" + windowID
-	return key, reset, time.Until(reset) + time.Hour
+	return key, reset, reset.Sub(now.UTC()) + time.Hour
 }
 
 func DurationWindow(prefix string, limit *quotav1.Limit, now time.Time) (key string, resetAt time.Time, ttl time.Duration) {

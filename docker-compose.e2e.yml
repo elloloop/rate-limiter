@@ -1,0 +1,28 @@
+services:
+  redis:
+    image: redis:7.4-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  quota-service:
+    build:
+      context: .
+      target: server
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      QUOTA_PRODUCT: e2e
+      QUOTA_ENVIRONMENT: test
+      QUOTA_GRPC_BIND_ADDR: 0.0.0.0:8080
+      QUOTA_REDIS_URL: redis://redis:6379/0
+      QUOTA_REDIS_MODE: single_primary
+      QUOTA_EVENT_SINK: none
+      QUOTA_METRICS_BIND_ADDR: 0.0.0.0:9090
+      QUOTA_LOG_LEVEL: info
+    ports:
+      - "${QUOTA_E2E_GRPC_PORT:-38080}:8080"
+      - "${QUOTA_E2E_METRICS_PORT:-39090}:9090"

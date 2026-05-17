@@ -9,7 +9,7 @@ import DocsLayout from "../../../layouts/DocsLayout.astro";
   <h2>CI</h2>
   <p>
     Runs protobuf generation checks, Go tests, race-enabled integration tests,
-    Docker build smoke, and vulnerability scans.
+    Docker build smoke, Docker Compose e2e, and vulnerability scans.
   </p>
 
   <h2>Docs</h2>
@@ -21,8 +21,7 @@ import DocsLayout from "../../../layouts/DocsLayout.astro";
   <h2>Release</h2>
   <p>
     On <code>v*</code> tags, builds and publishes a multi-arch Docker image to
-    GHCR, creates a GitHub Release, attaches protobuf archives, and triggers a
-    docs rebuild.
+    GHCR after the Redis integration and Docker Compose e2e gates pass, creates
+    a GitHub Release, attaches protobuf archives, and triggers a docs rebuild.
   </p>
 </DocsLayout>
-

@@ -55,10 +55,27 @@ jobs:
           load: true
           tags: rate-limiter:release-smoke
 
+  e2e:
+    name: Release E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Install grpcurl
+        run: |
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest
+      - name: Run Docker Compose e2e smoke
+        run: test/e2e/docker-compose-smoke.sh
+
   build-and-push:
     name: Build and Push Image
     runs-on: ubuntu-latest
-    needs: [test, docker-smoke]
+    needs: [test, docker-smoke, e2e]
     permissions:
       contents: read
       packages: write

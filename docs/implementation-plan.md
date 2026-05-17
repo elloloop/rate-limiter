@@ -23,3 +23,6 @@ The build order for v1 is:
 SDKs are intentionally excluded from the initial repository cut and can be
 added later as generated or thin client packages.
 
+Current release gates include unit tests, Redis-backed race-enabled integration
+tests, a Docker Compose e2e smoke test, docs builds, Docker builds, protobuf
+generation checks, and high/critical vulnerability scans.

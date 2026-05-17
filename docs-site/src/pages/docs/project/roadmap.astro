@@ -5,11 +5,10 @@ import DocsLayout from "../../../layouts/DocsLayout.astro";
 <DocsLayout title="Roadmap">
   <h1>Roadmap</h1>
   <ol>
-    <li>Lock the protobuf contract and documentation.</li>
-    <li>Add tests for validation, keying, Redis scripts, idempotency, and gRPC behavior.</li>
-    <li>Wire CI, docs deploy, release, and Docker publishing workflows.</li>
-    <li>Complete the Go service implementation.</li>
+    <li>Keep hardening Redis edge-case and failure-mode coverage.</li>
+    <li>Publish tagged Docker images through the release workflow.</li>
+    <li>Add load tests for sustained token bucket, GCRA, and lease pressure.</li>
+    <li>Add optional Redis Cluster-compatible APIs later only if the atomicity model changes.</li>
     <li>Add TypeScript and Python SDKs later as thin clients.</li>
   </ol>
 </DocsLayout>
-

@@ -111,6 +111,23 @@ jobs:
           cache-from: type=gha,scope=ci-docker
           cache-to: type=gha,mode=max,scope=ci-docker
 
+  e2e:
+    name: Docker Compose E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Install grpcurl
+        run: |
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest
+      - name: Run Docker Compose e2e smoke
+        run: test/e2e/docker-compose-smoke.sh
+
   security:
     name: Filesystem Vulnerability Scan
     runs-on: ubuntu-latest
@@ -129,6 +146,6 @@ jobs:
   all-checks:
     name: All Checks Passed
     runs-on: ubuntu-latest
-    needs: [protobuf, test, docs, docker, security]
+    needs: [protobuf, test, docs, docker, e2e, security]
     steps:
       - run: echo "All checks passed"

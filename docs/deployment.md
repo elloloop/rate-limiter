@@ -33,3 +33,5 @@ Release tags publish:
 - protobuf source archive
 - updated GitHub Pages docs
 
+The release workflow will not publish the image until Redis-backed Go tests and
+the Docker Compose e2e smoke test pass.

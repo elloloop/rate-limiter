@@ -92,11 +92,36 @@ Source documentation lives in:
 - `docs-site/`
 - `quota/v1/quota.proto`
 
-## Development Order
+## Tests
 
-This repository is being built in the handoff order:
+Run the fast unit suite:
 
-1. Documentation.
-2. Tests.
-3. Release workflows and GitHub Pages.
-4. Implementation.
+```bash
+go test ./...
+```
+
+Run Redis-backed integration tests:
+
+```bash
+docker run --rm -p 16379:6379 redis:7.4-alpine
+QUOTA_TEST_REDIS_URL=redis://localhost:16379/0 go test -race -count=1 ./...
+```
+
+Run the Docker Compose e2e smoke test:
+
+```bash
+test/e2e/docker-compose-smoke.sh
+```
+
+CI runs protobuf checks, unit tests, race-enabled Redis integration tests, docs
+builds, Docker builds, a Docker Compose e2e smoke test, and Trivy high/critical
+vulnerability scanning.
+
+## Releases
+
+Push a `v*` tag to publish:
+
+- `ghcr.io/elloloop/rate-limiter:<version>`
+- `ghcr.io/elloloop/rate-limiter:latest`
+- a GitHub Release with protobuf archives and checksums
+- refreshed GitHub Pages documentation

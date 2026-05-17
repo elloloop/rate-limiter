@@ -1,0 +1,41 @@
+---
+import DocsLayout from "../../../layouts/DocsLayout.astro";
+import { Code } from "astro-expressive-code/components";
+---
+
+<DocsLayout title="Testing">
+  <h1>Testing</h1>
+  <p>The repository uses multiple gates before an image is published.</p>
+
+  <h2>Unit Tests</h2>
+  <Code code={`go test ./...`} lang="bash" />
+  <p>
+    Unit tests cover configuration validation, YAML limit parsing, limit
+    validation, Redis key derivation, embedded Lua script presence, and command
+    helpers.
+  </p>
+
+  <h2>Redis Integration</h2>
+  <Code code={`docker run --rm -p 16379:6379 redis:7.4-alpine
+QUOTA_TEST_REDIS_URL=redis://localhost:16379/0 go test -race -count=1 ./...`} lang="bash" />
+  <p>
+    Redis-backed tests cover fixed windows, sliding windows, token buckets,
+    leaky buckets, GCRA, reservations, refunds, releases, concurrency leases,
+    idempotency, usage inspection, explain behavior, and a real gRPC
+    client/server round trip.
+  </p>
+
+  <h2>Docker Compose E2E</h2>
+  <Code code={`test/e2e/docker-compose-smoke.sh`} lang="bash" />
+  <p>
+    The e2e smoke test builds the Docker image, starts Redis and the service,
+    calls gRPC with <code>grpcurl</code>, verifies idempotency and denial
+    behavior, and checks Prometheus metrics.
+  </p>
+
+  <h2>Release Gates</h2>
+  <p>
+    Release tags run Redis integration tests and Docker Compose e2e before the
+    multi-arch GHCR image is pushed.
+  </p>
+</DocsLayout>

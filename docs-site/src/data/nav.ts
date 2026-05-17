@@ -67,6 +67,7 @@ export const sidebarSections: NavSection[] = [
     title: "Project",
     items: [
       { label: "Non-Goals", href: `${BASE}/docs/project/non-goals` },
+      { label: "Testing", href: `${BASE}/docs/project/testing` },
       { label: "Roadmap", href: `${BASE}/docs/project/roadmap` },
     ],
   },
