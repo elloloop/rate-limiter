@@ -31,7 +31,9 @@ Release tags publish:
 - multi-arch Docker image
 - GitHub Release notes
 - protobuf source archive
-- updated GitHub Pages docs
+- release-time docs build verification
 
 The release workflow will not publish the image until Redis-backed Go tests and
 the Docker Compose e2e smoke test pass.
+
+GitHub Pages deploys from `main` through the docs workflow.

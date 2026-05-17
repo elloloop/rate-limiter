@@ -124,4 +124,6 @@ Push a `v*` tag to publish:
 - `ghcr.io/elloloop/rate-limiter:<version>`
 - `ghcr.io/elloloop/rate-limiter:latest`
 - a GitHub Release with protobuf archives and checksums
-- refreshed GitHub Pages documentation
+- a release-time docs build verification
+
+GitHub Pages documentation deploys from `main` through the docs workflow.
