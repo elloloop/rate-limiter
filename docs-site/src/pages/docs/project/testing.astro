@@ -12,7 +12,7 @@ import { Code } from "astro-expressive-code/components";
   <p>
     Unit tests cover configuration validation, YAML limit parsing, limit
     validation, Redis key derivation, embedded Lua script presence, and command
-    helpers.
+    helpers, plus Prometheus metric exposition.
   </p>
 
   <h2>Redis Integration</h2>
@@ -20,9 +20,11 @@ import { Code } from "astro-expressive-code/components";
 QUOTA_TEST_REDIS_URL=redis://localhost:16379/0 go test -race -count=1 ./...`} lang="bash" />
   <p>
     Redis-backed tests cover fixed windows, sliding windows, token buckets,
-    leaky buckets, GCRA, reservations, refunds, releases, concurrency leases,
-    idempotency, usage inspection, explain behavior, and a real gRPC
-    client/server round trip.
+    leaky buckets, GCRA, reservations, refunds, releases, reservation overages,
+    concurrency leases, lease expiry, idempotency, invalid algorithm/RPC
+    combinations, usage inspection, explain behavior, a concurrent contention
+    stress case for Redis Lua atomicity, and a real gRPC client/server round
+    trip.
   </p>
 
   <h2>Docker Compose E2E</h2>
@@ -36,6 +38,9 @@ QUOTA_TEST_REDIS_URL=redis://localhost:16379/0 go test -race -count=1 ./...`} la
   <h2>Release Gates</h2>
   <p>
     Release tags run Redis integration tests and Docker Compose e2e before the
-    multi-arch GHCR image is pushed.
+    multi-arch GHCR image is pushed. The release workflow then inspects the
+    published manifest, pulls the versioned GHCR image, and runs
+    <code>quota-service version</code> from that pulled image before creating
+    the GitHub Release.
   </p>
 </DocsLayout>

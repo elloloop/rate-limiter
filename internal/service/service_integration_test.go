@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -83,6 +84,66 @@ func TestConsumeIsAtomicAndIdempotentWithRedis(t *testing.T) {
 	if got := usage.GetLimitStatuses()[0].GetUsed(); got != 25 {
 		t.Fatalf("denied request mutated usage: got %d want 25", got)
 	}
+}
+
+func TestConsumeConcurrentContentionUsesRedisAtomicity(t *testing.T) {
+	ctx, svc, _ := newRedisBackedService(t)
+
+	const allowedLimit = 20
+	const attempts = 80
+
+	limit := fixedDurationLimit("concurrent_atomic", allowedLimit)
+	start := make(chan struct{})
+	results := make(chan bool, attempts)
+	errs := make(chan error, attempts)
+
+	var wg sync.WaitGroup
+	for i := 0; i < attempts; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			resp, err := svc.Consume(ctx, &quotav1.ConsumeRequest{
+				RequestId: "req-concurrent-" + strconv.Itoa(i),
+				Context:   &quotav1.RequestContext{Product: "workspace", Environment: "test"},
+				Action:    limit.GetAction(),
+				Cost:      1,
+				Limits:    []*quotav1.Limit{limit},
+			})
+			if err != nil {
+				errs <- err
+				return
+			}
+			results <- resp.GetDecision().GetAllowed()
+		}(i)
+	}
+
+	close(start)
+	wg.Wait()
+	close(results)
+	close(errs)
+
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent consume: %v", err)
+		}
+	}
+
+	var allowed, denied int
+	for ok := range results {
+		if ok {
+			allowed++
+		} else {
+			denied++
+		}
+	}
+	if allowed != allowedLimit {
+		t.Fatalf("allowed requests = %d, want %d", allowed, allowedLimit)
+	}
+	if denied != attempts-allowedLimit {
+		t.Fatalf("denied requests = %d, want %d", denied, attempts-allowedLimit)
+	}
+	assertUsed(t, ctx, svc, limit, allowedLimit)
 }
 
 func TestConsumeSupportsWindowAndBucketAlgorithmsWithRedis(t *testing.T) {
@@ -287,6 +348,67 @@ func TestReservationFinalizeAndReleaseLifecycleWithRedis(t *testing.T) {
 	assertUsed(t, ctx, svc, limit, 50)
 }
 
+func TestReservationOverageDoesNotMutateOriginalWindowWithRedis(t *testing.T) {
+	ctx, svc, _ := newRedisBackedService(t)
+
+	limit := fixedDayLimitWithLimit(100)
+	limit.Refundable = true
+	limit.ReservationExpiryPolicy = quotav1.ReservationExpiryPolicy_RESERVATION_EXPIRY_POLICY_CHARGE_FULL
+
+	reserve, err := svc.Reserve(ctx, &quotav1.ReserveRequest{
+		RequestId:        "req-overage-reserve",
+		Context:          &quotav1.RequestContext{Product: "workspace", Environment: "test"},
+		Action:           limit.GetAction(),
+		ReserveCost:      40,
+		ReservationTtlMs: 60000,
+		Limits:           []*quotav1.Limit{limit},
+	})
+	if err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	if !reserve.GetDecision().GetAllowed() || reserve.GetReservation() == nil {
+		t.Fatalf("expected reservation, got %v", reserve)
+	}
+	assertUsed(t, ctx, svc, limit, 40)
+
+	finalized, err := svc.FinalizeReservation(ctx, &quotav1.FinalizeReservationRequest{
+		RequestId:     "req-overage-finalize",
+		ReservationId: reserve.GetReservation().GetReservationId(),
+		ActualCost:    65,
+		Status:        quotav1.FinalizeStatus_FINALIZE_STATUS_SUCCEEDED,
+	})
+	if err != nil {
+		t.Fatalf("finalize overage: %v", err)
+	}
+	if !finalized.GetFinalized() || finalized.GetRefundedCost() != 0 || finalized.GetOverageCost() != 25 {
+		t.Fatalf("unexpected overage finalization response: %v", finalized)
+	}
+	assertUsed(t, ctx, svc, limit, 40)
+
+	stored, err := svc.GetReservation(ctx, &quotav1.GetReservationRequest{ReservationId: reserve.GetReservation().GetReservationId()})
+	if err != nil {
+		t.Fatalf("get overage reservation: %v", err)
+	}
+	if stored.GetActualCost() != 65 || stored.GetOverageCost() != 25 || stored.GetStatus() != quotav1.ReservationStatus_RESERVATION_STATUS_FINALIZED {
+		t.Fatalf("stored overage reservation mismatch: %v", stored)
+	}
+
+	consume, err := svc.Consume(ctx, &quotav1.ConsumeRequest{
+		RequestId: "req-overage-consume",
+		Context:   &quotav1.RequestContext{Product: "workspace", Environment: "test"},
+		Action:    limit.GetAction(),
+		Cost:      60,
+		Limits:    []*quotav1.Limit{limit},
+	})
+	if err != nil {
+		t.Fatalf("consume after overage: %v", err)
+	}
+	if !consume.GetDecision().GetAllowed() {
+		t.Fatalf("overage mutated current window; consume denied: %v", consume.GetDecision())
+	}
+	assertUsed(t, ctx, svc, limit, 100)
+}
+
 func TestConcurrencyLeaseLifecycleWithRedis(t *testing.T) {
 	ctx, svc, _ := newRedisBackedService(t)
 
@@ -337,6 +459,75 @@ func TestConcurrencyLeaseLifecycleWithRedis(t *testing.T) {
 	fourth := acquireLease(t, ctx, svc, "req-lease-4", limit)
 	if fourth.GetLease() == nil {
 		t.Fatalf("expected replacement lease after release")
+	}
+}
+
+func TestLeaseExpirationAllowsReplacementWithRedis(t *testing.T) {
+	ctx, svc, _ := newRedisBackedService(t)
+
+	limit := concurrencyLimit(1)
+	first, err := svc.AcquireLease(ctx, &quotav1.AcquireLeaseRequest{
+		RequestId:  "req-expiring-lease-1",
+		Context:    &quotav1.RequestContext{Product: "workspace", Environment: "test"},
+		Action:     limit.GetAction(),
+		Limits:     []*quotav1.Limit{limit},
+		LeaseTtlMs: 100,
+	})
+	if err != nil {
+		t.Fatalf("first acquire: %v", err)
+	}
+	if !first.GetDecision().GetAllowed() || first.GetLease() == nil {
+		t.Fatalf("expected first lease allowed: %v", first)
+	}
+
+	time.Sleep(250 * time.Millisecond)
+
+	second, err := svc.AcquireLease(ctx, &quotav1.AcquireLeaseRequest{
+		RequestId:  "req-expiring-lease-2",
+		Context:    &quotav1.RequestContext{Product: "workspace", Environment: "test"},
+		Action:     limit.GetAction(),
+		Limits:     []*quotav1.Limit{limit},
+		LeaseTtlMs: 60000,
+	})
+	if err != nil {
+		t.Fatalf("second acquire after expiry: %v", err)
+	}
+	if !second.GetDecision().GetAllowed() || second.GetLease() == nil {
+		t.Fatalf("expected replacement lease after expiry; first=%v second=%v", first.GetLease(), second)
+	}
+}
+
+func TestOperationSpecificAlgorithmsReturnInvalidDecision(t *testing.T) {
+	ctx, svc, _ := newRedisBackedService(t)
+
+	concurrency := concurrencyLimit(1)
+	consume, err := svc.Consume(ctx, &quotav1.ConsumeRequest{
+		RequestId: "req-consume-with-concurrency",
+		Context:   &quotav1.RequestContext{Product: "workspace", Environment: "test"},
+		Action:    concurrency.GetAction(),
+		Cost:      1,
+		Limits:    []*quotav1.Limit{concurrency},
+	})
+	if err != nil {
+		t.Fatalf("consume with concurrency limit: %v", err)
+	}
+	if consume.GetDecision().GetAllowed() || consume.GetDecision().GetReason() != quotav1.DecisionReason_DECISION_REASON_INVALID_REQUEST {
+		t.Fatalf("expected invalid consume decision for concurrency limit: %v", consume.GetDecision())
+	}
+
+	fixed := fixedDurationLimit("lease_wrong_algorithm", 2)
+	lease, err := svc.AcquireLease(ctx, &quotav1.AcquireLeaseRequest{
+		RequestId:  "req-lease-with-fixed-window",
+		Context:    &quotav1.RequestContext{Product: "workspace", Environment: "test"},
+		Action:     fixed.GetAction(),
+		Limits:     []*quotav1.Limit{fixed},
+		LeaseTtlMs: 1000,
+	})
+	if err != nil {
+		t.Fatalf("lease with fixed window limit: %v", err)
+	}
+	if lease.GetDecision().GetAllowed() || lease.GetDecision().GetReason() != quotav1.DecisionReason_DECISION_REASON_INVALID_REQUEST {
+		t.Fatalf("expected invalid lease decision for non-concurrency limit: %v", lease.GetDecision())
 	}
 }
 

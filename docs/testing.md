@@ -9,7 +9,8 @@ go test ./...
 ```
 
 These cover configuration validation, YAML limit parsing, limit validation,
-Redis key derivation, embedded Lua script presence, and command helpers.
+Redis key derivation, embedded Lua script presence, command helpers, and
+Prometheus metric exposition.
 
 ## Redis Integration Tests
 
@@ -21,8 +22,10 @@ QUOTA_TEST_REDIS_URL=redis://localhost:16379/0 go test -race -count=1 ./...
 These exercise the service against a real Redis instance. Coverage includes
 fixed calendar windows, fixed duration windows, sliding windows, token buckets,
 leaky buckets, GCRA, reservations, finalization refunds, release refunds,
-concurrency leases, renewals, releases, idempotency, `Explain`, current usage,
-and a real gRPC client/server round trip.
+reservation overages, concurrency leases, renewals, releases, lease expiry,
+idempotency, invalid algorithm/RPC combinations, `Explain`, current usage, a
+concurrent contention stress case for Redis Lua atomicity, and a real gRPC
+client/server round trip.
 
 ## Docker Compose E2E
 
@@ -41,4 +44,7 @@ the docs build, Docker build smoke, Docker Compose e2e, and Trivy high/critical
 filesystem scanning.
 
 Release tags run the same Redis integration and e2e gates before the multi-arch
-GHCR image is published.
+GHCR image is published. After publish, the release workflow inspects the
+published manifest, pulls the versioned image from GHCR, and runs
+`quota-service version` from that pulled image before creating the GitHub
+Release.
