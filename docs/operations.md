@@ -60,3 +60,12 @@ Event emission must not block the hot path in default mode.
 Postgres event writes run with their own short timeout instead of inheriting the
 caller RPC context, so a completed request does not cancel best-effort event
 delivery.
+
+## Reservation Expiry
+
+The service keeps an internal Redis sorted-set index of reservation expiration
+times. A background sweeper runs in-process and expires due reservations in
+batches. `RESERVATION_EXPIRY_POLICY_REFUND_FULL` refunds the stored reserved
+cost even if the impact is not otherwise refundable; `CHARGE_FULL` leaves the
+counter debit in place. The sweeper uses stored `ReservationImpact.redis_key`
+values and does not recompute current windows.

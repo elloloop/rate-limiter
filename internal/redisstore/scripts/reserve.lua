@@ -4,9 +4,10 @@ local now_ms = tonumber(ARGV[3])
 local dry_run = ARGV[4] == "1"
 local ops = cjson.decode(ARGV[5])
 local reservation_key = ARGV[6]
-local reservation_json = ARGV[7]
-local reservation_ttl_ms = tonumber(ARGV[8])
-local decision_id = ARGV[9]
+local reservation_index_key = ARGV[7]
+local reservation_json = ARGV[8]
+local reservation_ttl_ms = tonumber(ARGV[9])
+local decision_id = ARGV[10]
 
 local cached = redis.call("GET", idem_key)
 if cached then
@@ -126,6 +127,8 @@ if allowed and not dry_run then
     end
   end
   redis.call("PSETEX", reservation_key, reservation_ttl_ms, reservation_json)
+  local reservation = cjson.decode(reservation_json)
+  redis.call("ZADD", reservation_index_key, reservation.expires_at_unix_ms, reservation_key)
 end
 
 local result = cjson.encode({

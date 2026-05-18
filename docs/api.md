@@ -8,6 +8,7 @@ The v1 service surface is:
 service QuotaService {
   rpc Consume(ConsumeRequest) returns (ConsumeResponse);
   rpc Reserve(ReserveRequest) returns (ReserveResponse);
+  rpc IncrementReservation(IncrementReservationRequest) returns (IncrementReservationResponse);
   rpc FinalizeReservation(FinalizeReservationRequest) returns (FinalizeReservationResponse);
   rpc ReleaseReservation(ReleaseReservationRequest) returns (ReleaseReservationResponse);
   rpc AcquireLease(AcquireLeaseRequest) returns (AcquireLeaseResponse);
@@ -31,7 +32,7 @@ Recommended TTLs:
 
 - `Consume`: 24 hours
 - `Reserve`: reservation TTL plus 24 hours
-- `FinalizeReservation` and `ReleaseReservation`: 24 hours
+- `IncrementReservation`, `FinalizeReservation`, and `ReleaseReservation`: 24 hours
 - lease operations: lease TTL plus 1 hour
 
 ## Decision
@@ -45,3 +46,14 @@ Every enforcement call returns a `Decision`:
 - metadata such as idempotency hits
 
 `LimitStatus` is the caller-facing usage snapshot for each supplied limit.
+
+## IncrementReservation
+
+`IncrementReservation` adjusts an active reservation without recomputing the
+original window keys. Positive `delta_cost` re-checks the stored reservation
+impacts atomically and denies without mutation if any limit would be exceeded.
+Negative `delta_cost` releases usage for refundable impacts and updates the
+stored reserved cost.
+
+This is intended for streaming and long-running workloads where the caller
+starts with an estimate and learns more accurate usage before finalization.

@@ -32,11 +32,16 @@
 ## Assistant Token Reservation
 
 Use `Reserve` before the model call and `FinalizeReservation` after the call
-with the actual token count. Finalization uses the stored reservation impact
-keys, not the current wall-clock window.
+with the actual token count. If a streaming workload needs more budget, call
+`IncrementReservation` with a positive `delta_cost`; if it over-reserved before
+finalization, call it with a negative `delta_cost`. Positive increments
+re-check the stored impacted limits atomically. Negative increments release
+refundable impacts.
+
+Finalization uses the stored reservation impact keys, not the current
+wall-clock window.
 
 ## Assistant Concurrency
 
 Use `AcquireLease` before an operation and `ReleaseLease` when it finishes.
 Renew long-running operations before `lease_ttl_ms` expires.
-

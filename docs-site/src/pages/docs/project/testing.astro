@@ -20,10 +20,12 @@ import { Code } from "astro-expressive-code/components";
 QUOTA_TEST_REDIS_URL=redis://localhost:16379/0 go test -race -count=1 ./...`} lang="bash" />
   <p>
     Redis-backed tests cover fixed windows, sliding windows, token buckets,
-    leaky buckets, GCRA, reservations, refunds, releases, reservation overages,
-    concurrency leases, lease expiry, idempotency, invalid algorithm/RPC
-    combinations, usage inspection, explain behavior, a concurrent contention
-    stress case for Redis Lua atomicity, Redis script reload after
+    leaky buckets, GCRA, reservations, reservation increments and shrinkage,
+    expiry-policy refunds, finalization refunds, releases, reservation
+    overages, concurrency leases, lease expiry, idempotency, invalid
+    algorithm/RPC combinations,
+    usage inspection, explain behavior, a concurrent contention stress case for
+    Redis Lua atomicity, Redis script reload after
     <code>SCRIPT FLUSH</code>, lifecycle idempotency metrics, and a real gRPC
     client/server round trip.
   </p>
@@ -37,8 +39,9 @@ QUOTA_TEST_REDIS_URL=redis://localhost:16379/0 go test -race -count=1 ./...`} la
     <code>GetRedisStatus</code>, <code>ValidateLimits</code>,
     <code>Consume</code>, <code>GetCurrentUsage</code>,
     <code>Explain</code>, <code>Reserve</code>,
-    <code>GetReservation</code>, <code>FinalizeReservation</code>,
-    <code>ReleaseReservation</code>, <code>AcquireLease</code>,
+    <code>GetReservation</code>, <code>IncrementReservation</code>,
+    <code>FinalizeReservation</code>, <code>ReleaseReservation</code>,
+    <code>AcquireLease</code>,
     <code>GetLease</code>, <code>RenewLease</code>, and
     <code>ReleaseLease</code>, plus idempotency, denial behavior, and
     Prometheus metrics. It also checks the standard gRPC health service reports

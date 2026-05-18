@@ -19,19 +19,20 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	QuotaService_Consume_FullMethodName             = "/quota.v1.QuotaService/Consume"
-	QuotaService_Reserve_FullMethodName             = "/quota.v1.QuotaService/Reserve"
-	QuotaService_FinalizeReservation_FullMethodName = "/quota.v1.QuotaService/FinalizeReservation"
-	QuotaService_ReleaseReservation_FullMethodName  = "/quota.v1.QuotaService/ReleaseReservation"
-	QuotaService_AcquireLease_FullMethodName        = "/quota.v1.QuotaService/AcquireLease"
-	QuotaService_RenewLease_FullMethodName          = "/quota.v1.QuotaService/RenewLease"
-	QuotaService_ReleaseLease_FullMethodName        = "/quota.v1.QuotaService/ReleaseLease"
-	QuotaService_Explain_FullMethodName             = "/quota.v1.QuotaService/Explain"
-	QuotaService_GetCurrentUsage_FullMethodName     = "/quota.v1.QuotaService/GetCurrentUsage"
-	QuotaService_ValidateLimits_FullMethodName      = "/quota.v1.QuotaService/ValidateLimits"
-	QuotaService_GetReservation_FullMethodName      = "/quota.v1.QuotaService/GetReservation"
-	QuotaService_GetLease_FullMethodName            = "/quota.v1.QuotaService/GetLease"
-	QuotaService_GetRedisStatus_FullMethodName      = "/quota.v1.QuotaService/GetRedisStatus"
+	QuotaService_Consume_FullMethodName              = "/quota.v1.QuotaService/Consume"
+	QuotaService_Reserve_FullMethodName              = "/quota.v1.QuotaService/Reserve"
+	QuotaService_IncrementReservation_FullMethodName = "/quota.v1.QuotaService/IncrementReservation"
+	QuotaService_FinalizeReservation_FullMethodName  = "/quota.v1.QuotaService/FinalizeReservation"
+	QuotaService_ReleaseReservation_FullMethodName   = "/quota.v1.QuotaService/ReleaseReservation"
+	QuotaService_AcquireLease_FullMethodName         = "/quota.v1.QuotaService/AcquireLease"
+	QuotaService_RenewLease_FullMethodName           = "/quota.v1.QuotaService/RenewLease"
+	QuotaService_ReleaseLease_FullMethodName         = "/quota.v1.QuotaService/ReleaseLease"
+	QuotaService_Explain_FullMethodName              = "/quota.v1.QuotaService/Explain"
+	QuotaService_GetCurrentUsage_FullMethodName      = "/quota.v1.QuotaService/GetCurrentUsage"
+	QuotaService_ValidateLimits_FullMethodName       = "/quota.v1.QuotaService/ValidateLimits"
+	QuotaService_GetReservation_FullMethodName       = "/quota.v1.QuotaService/GetReservation"
+	QuotaService_GetLease_FullMethodName             = "/quota.v1.QuotaService/GetLease"
+	QuotaService_GetRedisStatus_FullMethodName       = "/quota.v1.QuotaService/GetRedisStatus"
 )
 
 // QuotaServiceClient is the client API for QuotaService service.
@@ -40,6 +41,7 @@ const (
 type QuotaServiceClient interface {
 	Consume(ctx context.Context, in *ConsumeRequest, opts ...grpc.CallOption) (*ConsumeResponse, error)
 	Reserve(ctx context.Context, in *ReserveRequest, opts ...grpc.CallOption) (*ReserveResponse, error)
+	IncrementReservation(ctx context.Context, in *IncrementReservationRequest, opts ...grpc.CallOption) (*IncrementReservationResponse, error)
 	FinalizeReservation(ctx context.Context, in *FinalizeReservationRequest, opts ...grpc.CallOption) (*FinalizeReservationResponse, error)
 	ReleaseReservation(ctx context.Context, in *ReleaseReservationRequest, opts ...grpc.CallOption) (*ReleaseReservationResponse, error)
 	AcquireLease(ctx context.Context, in *AcquireLeaseRequest, opts ...grpc.CallOption) (*AcquireLeaseResponse, error)
@@ -75,6 +77,16 @@ func (c *quotaServiceClient) Reserve(ctx context.Context, in *ReserveRequest, op
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReserveResponse)
 	err := c.cc.Invoke(ctx, QuotaService_Reserve_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *quotaServiceClient) IncrementReservation(ctx context.Context, in *IncrementReservationRequest, opts ...grpc.CallOption) (*IncrementReservationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IncrementReservationResponse)
+	err := c.cc.Invoke(ctx, QuotaService_IncrementReservation_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -197,6 +209,7 @@ func (c *quotaServiceClient) GetRedisStatus(ctx context.Context, in *GetRedisSta
 type QuotaServiceServer interface {
 	Consume(context.Context, *ConsumeRequest) (*ConsumeResponse, error)
 	Reserve(context.Context, *ReserveRequest) (*ReserveResponse, error)
+	IncrementReservation(context.Context, *IncrementReservationRequest) (*IncrementReservationResponse, error)
 	FinalizeReservation(context.Context, *FinalizeReservationRequest) (*FinalizeReservationResponse, error)
 	ReleaseReservation(context.Context, *ReleaseReservationRequest) (*ReleaseReservationResponse, error)
 	AcquireLease(context.Context, *AcquireLeaseRequest) (*AcquireLeaseResponse, error)
@@ -223,6 +236,9 @@ func (UnimplementedQuotaServiceServer) Consume(context.Context, *ConsumeRequest)
 }
 func (UnimplementedQuotaServiceServer) Reserve(context.Context, *ReserveRequest) (*ReserveResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Reserve not implemented")
+}
+func (UnimplementedQuotaServiceServer) IncrementReservation(context.Context, *IncrementReservationRequest) (*IncrementReservationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method IncrementReservation not implemented")
 }
 func (UnimplementedQuotaServiceServer) FinalizeReservation(context.Context, *FinalizeReservationRequest) (*FinalizeReservationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method FinalizeReservation not implemented")
@@ -310,6 +326,24 @@ func _QuotaService_Reserve_Handler(srv interface{}, ctx context.Context, dec fun
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(QuotaServiceServer).Reserve(ctx, req.(*ReserveRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _QuotaService_IncrementReservation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IncrementReservationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QuotaServiceServer).IncrementReservation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: QuotaService_IncrementReservation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QuotaServiceServer).IncrementReservation(ctx, req.(*IncrementReservationRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -526,6 +560,10 @@ var QuotaService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Reserve",
 			Handler:    _QuotaService_Reserve_Handler,
+		},
+		{
+			MethodName: "IncrementReservation",
+			Handler:    _QuotaService_IncrementReservation_Handler,
 		},
 		{
 			MethodName: "FinalizeReservation",

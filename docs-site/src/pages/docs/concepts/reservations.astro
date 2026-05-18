@@ -23,6 +23,15 @@ import DocsLayout from "../../../layouts/DocsLayout.astro";
     retroactively.
   </p>
 
+  <h2>Increment</h2>
+  <p>
+    <code>IncrementReservation</code> adjusts an active reservation for
+    streaming and long-running workloads. Positive deltas re-check the stored
+    impacted limits atomically and deny without mutation if any limit would be
+    exceeded. Negative deltas reduce reserved cost and release refundable
+    impacts.
+  </p>
+
   <h2>Release</h2>
   <p>
     <code>ReleaseReservation</code> is used when the operation definitely did
@@ -31,8 +40,16 @@ import DocsLayout from "../../../layouts/DocsLayout.astro";
 
   <h2>Important invariant</h2>
   <p>
-    Finalization and release use <code>ReservationImpact.redis_key</code>.
-    They must not recompute the current window key from wall-clock time.
+    Increment, finalization, release, and expiry use
+    <code>ReservationImpact.redis_key</code>. They must not recompute the
+    current window key from wall-clock time.
+  </p>
+
+  <h2>Expiry</h2>
+  <p>
+    Expiry is processed by an internal Redis-backed sweeper. A
+    <code>REFUND_FULL</code> policy refunds the stored reserved cost even when
+    the impact is not otherwise refundable; <code>CHARGE_FULL</code> keeps the
+    debit in place and marks the reservation expired.
   </p>
 </DocsLayout>
-

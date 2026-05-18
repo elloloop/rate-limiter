@@ -10,6 +10,7 @@ import { Code } from "astro-expressive-code/components";
   <Code code={`service QuotaService {
   rpc Consume(ConsumeRequest) returns (ConsumeResponse);
   rpc Reserve(ReserveRequest) returns (ReserveResponse);
+  rpc IncrementReservation(IncrementReservationRequest) returns (IncrementReservationResponse);
   rpc FinalizeReservation(FinalizeReservationRequest) returns (FinalizeReservationResponse);
   rpc ReleaseReservation(ReleaseReservationRequest) returns (ReleaseReservationResponse);
   rpc AcquireLease(AcquireLeaseRequest) returns (AcquireLeaseResponse);
@@ -31,7 +32,9 @@ import { Code } from "astro-expressive-code/components";
   <h2>Reserve and finalize</h2>
   <p>
     Estimated-cost actions. A reservation records exact Redis impact keys so
-    finalization and release do not recompute current windows.
+    increment, finalization, and release do not recompute current windows.
+    Positive <code>IncrementReservation</code> deltas re-check stored impacts
+    atomically; negative deltas release refundable impacts.
   </p>
 
   <h2>Lease operations</h2>

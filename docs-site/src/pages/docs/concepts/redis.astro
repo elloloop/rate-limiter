@@ -22,6 +22,7 @@ tb:{limit_id_hash}:{scope_hash}
 lb:{limit_id_hash}:{scope_hash}
 gcra:{limit_id_hash}:{scope_hash}
 res:{reservation_id}
+res_expiry
 lease_set:{limit_id_hash}:{scope_hash}
 lease:{lease_id}`} lang="text" />
 
@@ -29,11 +30,12 @@ lease:{lease_id}`} lang="text" />
   <ul>
     <li><code>consume.lua</code></li>
     <li><code>reserve.lua</code></li>
+    <li><code>increment_reservation.lua</code></li>
     <li><code>finalize_reservation.lua</code></li>
     <li><code>release_reservation.lua</code></li>
+    <li><code>expire_reservations.lua</code></li>
     <li><code>acquire_lease.lua</code></li>
     <li><code>renew_lease.lua</code></li>
     <li><code>release_lease.lua</code></li>
   </ul>
 </DocsLayout>
-

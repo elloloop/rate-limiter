@@ -8,6 +8,7 @@ service QuotaService {
   rpc Consume(ConsumeRequest) returns (ConsumeResponse);
 
   rpc Reserve(ReserveRequest) returns (ReserveResponse);
+  rpc IncrementReservation(IncrementReservationRequest) returns (IncrementReservationResponse);
   rpc FinalizeReservation(FinalizeReservationRequest) returns (FinalizeReservationResponse);
   rpc ReleaseReservation(ReleaseReservationRequest) returns (ReleaseReservationResponse);
 
@@ -177,6 +178,19 @@ message ReserveResponse {
   Reservation reservation = 2;
 }
 
+message IncrementReservationRequest {
+  string request_id = 1;
+  string reservation_id = 2;
+  int64 delta_cost = 3;
+  map<string, string> metadata = 4;
+}
+
+message IncrementReservationResponse {
+  Decision decision = 1;
+  int64 reserved_cost = 2;
+  Reservation reservation = 3;
+}
+
 message FinalizeReservationRequest {
   string request_id = 1;
   string reservation_id = 2;
@@ -238,6 +252,11 @@ message ReservationImpact {
   int64 reserved_cost = 5;
   bool refundable = 6;
   ReservationExpiryPolicy expiry_policy = 7;
+  int64 limit = 8;
+  int64 burst = 9;
+  double refill_rate_per_sec = 10;
+  int64 reset_at_unix_ms = 11;
+  string unit = 12;
 }
 
 enum ReservationStatus {

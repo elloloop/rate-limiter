@@ -381,6 +381,179 @@ func TestReservationFinalizeAndReleaseLifecycleWithRedis(t *testing.T) {
 	assertUsed(t, ctx, svc, limit, 50)
 }
 
+func TestIncrementReservationLifecycleWithRedis(t *testing.T) {
+	ctx, svc, _ := newRedisBackedService(t)
+
+	limit := fixedDayLimitWithLimit(100)
+	limit.Refundable = true
+	limit.ReservationExpiryPolicy = quotav1.ReservationExpiryPolicy_RESERVATION_EXPIRY_POLICY_CHARGE_FULL
+
+	reserve, err := svc.Reserve(ctx, &quotav1.ReserveRequest{
+		RequestId:        "req-increment-reserve",
+		Context:          &quotav1.RequestContext{Product: "assistant", Environment: "test"},
+		Action:           limit.GetAction(),
+		ReserveCost:      40,
+		ReservationTtlMs: 60000,
+		Limits:           []*quotav1.Limit{limit},
+	})
+	if err != nil {
+		t.Fatalf("reserve: %v", err)
+	}
+	if !reserve.GetDecision().GetAllowed() || reserve.GetReservation() == nil {
+		t.Fatalf("expected reservation, got %v", reserve)
+	}
+	assertUsed(t, ctx, svc, limit, 40)
+
+	grow, err := svc.IncrementReservation(ctx, &quotav1.IncrementReservationRequest{
+		RequestId:     "req-increment-grow",
+		ReservationId: reserve.GetReservation().GetReservationId(),
+		DeltaCost:     30,
+	})
+	if err != nil {
+		t.Fatalf("increment grow: %v", err)
+	}
+	if !grow.GetDecision().GetAllowed() || grow.GetReservedCost() != 70 || grow.GetReservation().GetReservedCost() != 70 {
+		t.Fatalf("unexpected grow response: %v", grow)
+	}
+	assertUsed(t, ctx, svc, limit, 70)
+
+	replay, err := svc.IncrementReservation(ctx, &quotav1.IncrementReservationRequest{
+		RequestId:     "req-increment-grow",
+		ReservationId: reserve.GetReservation().GetReservationId(),
+		DeltaCost:     999,
+	})
+	if err != nil {
+		t.Fatalf("increment replay: %v", err)
+	}
+	if replay.GetReservedCost() != 70 || replay.GetDecision().GetMetadata()["idempotency_hit"] != "true" {
+		t.Fatalf("increment replay was not idempotent: %v", replay)
+	}
+	assertUsed(t, ctx, svc, limit, 70)
+
+	denied, err := svc.IncrementReservation(ctx, &quotav1.IncrementReservationRequest{
+		RequestId:     "req-increment-denied",
+		ReservationId: reserve.GetReservation().GetReservationId(),
+		DeltaCost:     40,
+	})
+	if err != nil {
+		t.Fatalf("increment denied: %v", err)
+	}
+	if denied.GetDecision().GetAllowed() || denied.GetReservedCost() != 70 {
+		t.Fatalf("expected increment denial without reservation growth: %v", denied)
+	}
+	assertUsed(t, ctx, svc, limit, 70)
+
+	shrink, err := svc.IncrementReservation(ctx, &quotav1.IncrementReservationRequest{
+		RequestId:     "req-increment-shrink",
+		ReservationId: reserve.GetReservation().GetReservationId(),
+		DeltaCost:     -25,
+	})
+	if err != nil {
+		t.Fatalf("increment shrink: %v", err)
+	}
+	if !shrink.GetDecision().GetAllowed() || shrink.GetReservedCost() != 45 {
+		t.Fatalf("unexpected shrink response: %v", shrink)
+	}
+	assertUsed(t, ctx, svc, limit, 45)
+
+	finalized, err := svc.FinalizeReservation(ctx, &quotav1.FinalizeReservationRequest{
+		RequestId:     "req-increment-finalize",
+		ReservationId: reserve.GetReservation().GetReservationId(),
+		ActualCost:    40,
+		Status:        quotav1.FinalizeStatus_FINALIZE_STATUS_SUCCEEDED,
+	})
+	if err != nil {
+		t.Fatalf("finalize incremented reservation: %v", err)
+	}
+	if !finalized.GetFinalized() || finalized.GetReservedCost() != 45 || finalized.GetRefundedCost() != 5 {
+		t.Fatalf("unexpected finalization response: %v", finalized)
+	}
+	assertUsed(t, ctx, svc, limit, 40)
+}
+
+func TestExpiredReservationsRefundByExpiryPolicyWithRedis(t *testing.T) {
+	ctx, svc, _ := newRedisBackedService(t)
+
+	refundLimit := fixedDayLimitWithLimit(100)
+	refundLimit.Refundable = false
+	refundLimit.ReservationExpiryPolicy = quotav1.ReservationExpiryPolicy_RESERVATION_EXPIRY_POLICY_REFUND_FULL
+
+	refundReserve, err := svc.Reserve(ctx, &quotav1.ReserveRequest{
+		RequestId:        "req-expire-refund-reserve",
+		Context:          &quotav1.RequestContext{Product: "assistant", Environment: "test"},
+		Action:           refundLimit.GetAction(),
+		ReserveCost:      40,
+		ReservationTtlMs: 100,
+		Limits:           []*quotav1.Limit{refundLimit},
+	})
+	if err != nil {
+		t.Fatalf("reserve refund-full: %v", err)
+	}
+	if !refundReserve.GetDecision().GetAllowed() {
+		t.Fatalf("refund-full reserve denied: %v", refundReserve.GetDecision())
+	}
+	assertUsed(t, ctx, svc, refundLimit, 40)
+
+	time.Sleep(200 * time.Millisecond)
+	expired, err := svc.ExpireReservations(ctx, 100)
+	if err != nil {
+		t.Fatalf("expire refund-full reservations: %v", err)
+	}
+	if expired != 1 {
+		t.Fatalf("expired refund-full reservations = %d, want 1", expired)
+	}
+	assertUsed(t, ctx, svc, refundLimit, 0)
+
+	storedRefund, err := svc.GetReservation(ctx, &quotav1.GetReservationRequest{ReservationId: refundReserve.GetReservation().GetReservationId()})
+	if err != nil {
+		t.Fatalf("get expired refund-full reservation: %v", err)
+	}
+	if storedRefund.GetStatus() != quotav1.ReservationStatus_RESERVATION_STATUS_EXPIRED || storedRefund.GetRefundedCost() != 40 {
+		t.Fatalf("unexpected expired refund-full reservation: %v", storedRefund)
+	}
+
+	chargeLimit := fixedDurationLimit("expire_charge_full", 100)
+	chargeLimit.Refundable = true
+	chargeLimit.ReservationExpiryPolicy = quotav1.ReservationExpiryPolicy_RESERVATION_EXPIRY_POLICY_CHARGE_FULL
+
+	chargeReserve, err := svc.Reserve(ctx, &quotav1.ReserveRequest{
+		RequestId:        "req-expire-charge-reserve",
+		Context:          &quotav1.RequestContext{Product: "assistant", Environment: "test"},
+		Action:           chargeLimit.GetAction(),
+		ReserveCost:      40,
+		ReservationTtlMs: 100,
+		Limits:           []*quotav1.Limit{chargeLimit},
+	})
+	if err != nil {
+		t.Fatalf("reserve charge-full: %v", err)
+	}
+	if !chargeReserve.GetDecision().GetAllowed() {
+		t.Fatalf("charge-full reserve denied: %v", chargeReserve.GetDecision())
+	}
+	assertUsed(t, ctx, svc, chargeLimit, 40)
+
+	time.Sleep(200 * time.Millisecond)
+	expired, err = svc.ExpireReservations(ctx, 100)
+	if err != nil {
+		t.Fatalf("expire charge-full reservations: %v", err)
+	}
+	if expired != 1 {
+		t.Fatalf("expired charge-full reservations = %d, want 1", expired)
+	}
+	assertUsed(t, ctx, svc, chargeLimit, 40)
+
+	storedCharge, err := svc.GetReservation(ctx, &quotav1.GetReservationRequest{ReservationId: chargeReserve.GetReservation().GetReservationId()})
+	if err != nil {
+		t.Fatalf("get expired charge-full reservation: %v", err)
+	}
+	if storedCharge.GetStatus() != quotav1.ReservationStatus_RESERVATION_STATUS_EXPIRED || storedCharge.GetRefundedCost() != 0 {
+		t.Fatalf("unexpected expired charge-full reservation: %v", storedCharge)
+	}
+
+	body := serviceMetrics(t, svc)
+	requireMetric(t, body, "quota_reservations_expired_total 2")
+}
+
 func TestLifecycleIdempotentReplaysDoNotDoubleCountActiveMetricsWithRedis(t *testing.T) {
 	ctx, svc, _ := newRedisBackedService(t)
 

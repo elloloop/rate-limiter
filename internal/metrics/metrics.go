@@ -104,6 +104,9 @@ func (m *Metrics) ReservationDec() { m.reservations.Dec() }
 func (m *Metrics) LeaseInc()       { m.leases.Inc() }
 func (m *Metrics) LeaseDec()       { m.leases.Dec() }
 func (m *Metrics) Overage()        { m.overages.Inc() }
+func (m *Metrics) ReservationsExpired(count float64) {
+	m.resExpired.Add(count)
+}
 
 func (m *Metrics) Handler() http.Handler {
 	return promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{})

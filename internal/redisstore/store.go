@@ -21,8 +21,10 @@ var scriptFS embed.FS
 const (
 	scriptConsume              = "consume"
 	scriptReserve              = "reserve"
+	scriptIncrementReservation = "increment_reservation"
 	scriptFinalizeReservation  = "finalize_reservation"
 	scriptReleaseReservation   = "release_reservation"
+	scriptExpireReservations   = "expire_reservations"
 	scriptAcquireLease         = "acquire_lease"
 	scriptRenewLease           = "renew_lease"
 	scriptReleaseLease         = "release_lease"
@@ -69,6 +71,49 @@ type DecisionResult struct {
 	LeaseID       string         `json:"lease_id"`
 	RetryAfterMS  int64          `json:"retry_after_ms"`
 	Statuses      []ScriptStatus `json:"statuses"`
+	Message       string         `json:"message"`
+}
+
+func (d *DecisionResult) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Cached        bool            `json:"cached"`
+		DecisionID    string          `json:"decision_id"`
+		Allowed       bool            `json:"allowed"`
+		DryRun        bool            `json:"dry_run"`
+		ReservationID string          `json:"reservation_id"`
+		LeaseID       string          `json:"lease_id"`
+		RetryAfterMS  int64           `json:"retry_after_ms"`
+		Statuses      json.RawMessage `json:"statuses"`
+		Message       string          `json:"message"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*d = DecisionResult{
+		Cached:        raw.Cached,
+		DecisionID:    raw.DecisionID,
+		Allowed:       raw.Allowed,
+		DryRun:        raw.DryRun,
+		ReservationID: raw.ReservationID,
+		LeaseID:       raw.LeaseID,
+		RetryAfterMS:  raw.RetryAfterMS,
+		Message:       raw.Message,
+	}
+	statuses := strings.TrimSpace(string(raw.Statuses))
+	if statuses == "" || statuses == "null" || statuses == "{}" {
+		return nil
+	}
+	return json.Unmarshal(raw.Statuses, &d.Statuses)
+}
+
+type IncrementReservationResult struct {
+	Cached       bool                 `json:"cached"`
+	Found        bool                 `json:"found"`
+	Active       bool                 `json:"active"`
+	ReservedCost int64                `json:"reserved_cost"`
+	Decision     DecisionResult       `json:"decision"`
+	Reservation  *quotav1.Reservation `json:"-"`
+	raw          json.RawMessage
 }
 
 type FinalizeResult struct {
@@ -101,6 +146,11 @@ type LeaseResult struct {
 	raw      json.RawMessage
 }
 
+type ExpireReservationsResult struct {
+	Expired int64 `json:"expired"`
+	Scanned int64 `json:"scanned"`
+}
+
 func New(ctx context.Context, redisURL string) (*Store, error) {
 	opts, err := redis.ParseURL(redisURL)
 	if err != nil {
@@ -127,8 +177,10 @@ func (s *Store) LoadScripts(ctx context.Context) error {
 	for _, name := range []string{
 		scriptConsume,
 		scriptReserve,
+		scriptIncrementReservation,
 		scriptFinalizeReservation,
 		scriptReleaseReservation,
+		scriptExpireReservations,
 		scriptAcquireLease,
 		scriptRenewLease,
 		scriptReleaseLease,
@@ -178,7 +230,7 @@ func (s *Store) Consume(ctx context.Context, idemKey string, now time.Time, ops 
 	return parseDecision(raw)
 }
 
-func (s *Store) Reserve(ctx context.Context, idemKey string, now time.Time, ops []LimitOp, dryRun bool, reservationKey string, reservation *quotav1.Reservation, decisionID string) (DecisionResult, error) {
+func (s *Store) Reserve(ctx context.Context, idemKey string, now time.Time, ops []LimitOp, dryRun bool, reservationKey, reservationExpiryIndexKey string, reservation *quotav1.Reservation, decisionID string) (DecisionResult, error) {
 	args, err := json.Marshal(ops)
 	if err != nil {
 		return DecisionResult{}, err
@@ -198,6 +250,7 @@ func (s *Store) Reserve(ctx context.Context, idemKey string, now time.Time, ops 
 		boolArg(dryRun),
 		string(args),
 		reservationKey,
+		reservationExpiryIndexKey,
 		string(reservationJSON),
 		millis(ttl),
 		decisionID,
@@ -208,11 +261,53 @@ func (s *Store) Reserve(ctx context.Context, idemKey string, now time.Time, ops 
 	return parseDecision(raw)
 }
 
-func (s *Store) FinalizeReservation(ctx context.Context, idemKey, reservationKey string, actualCost int64, now time.Time) (FinalizeResult, error) {
+func (s *Store) IncrementReservation(ctx context.Context, idemKey, reservationKey, reservationExpiryIndexKey string, deltaCost int64, now time.Time, decisionID string) (IncrementReservationResult, error) {
+	raw, err := s.evalText(ctx, scriptIncrementReservation, nil,
+		idemKey,
+		millis(defaultIdempotencyTTL),
+		reservationKey,
+		reservationExpiryIndexKey,
+		deltaCost,
+		now.UnixMilli(),
+		decisionID,
+	)
+	if err != nil {
+		return IncrementReservationResult{}, err
+	}
+	var envelope struct {
+		Cached       bool            `json:"cached"`
+		Found        bool            `json:"found"`
+		Active       bool            `json:"active"`
+		ReservedCost int64           `json:"reserved_cost"`
+		Decision     DecisionResult  `json:"decision"`
+		Reservation  json.RawMessage `json:"reservation"`
+	}
+	if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
+		return IncrementReservationResult{}, err
+	}
+	result := IncrementReservationResult{
+		Cached:       envelope.Cached,
+		Found:        envelope.Found,
+		Active:       envelope.Active,
+		ReservedCost: envelope.ReservedCost,
+		Decision:     envelope.Decision,
+		raw:          envelope.Reservation,
+	}
+	if len(envelope.Reservation) > 0 {
+		result.Reservation = &quotav1.Reservation{}
+		if err := protojson.Unmarshal(envelope.Reservation, result.Reservation); err != nil {
+			return IncrementReservationResult{}, err
+		}
+	}
+	return result, nil
+}
+
+func (s *Store) FinalizeReservation(ctx context.Context, idemKey, reservationKey, reservationExpiryIndexKey string, actualCost int64, now time.Time) (FinalizeResult, error) {
 	raw, err := s.evalText(ctx, scriptFinalizeReservation, nil,
 		idemKey,
 		millis(defaultIdempotencyTTL),
 		reservationKey,
+		reservationExpiryIndexKey,
 		actualCost,
 		now.UnixMilli(),
 	)
@@ -251,11 +346,12 @@ func (s *Store) FinalizeReservation(ctx context.Context, idemKey, reservationKey
 	return result, nil
 }
 
-func (s *Store) ReleaseReservation(ctx context.Context, idemKey, reservationKey string, now time.Time) (ReleaseReservationResult, error) {
+func (s *Store) ReleaseReservation(ctx context.Context, idemKey, reservationKey, reservationExpiryIndexKey string, now time.Time) (ReleaseReservationResult, error) {
 	raw, err := s.evalText(ctx, scriptReleaseReservation, nil,
 		idemKey,
 		millis(defaultIdempotencyTTL),
 		reservationKey,
+		reservationExpiryIndexKey,
 		now.UnixMilli(),
 	)
 	if err != nil {
@@ -283,6 +379,22 @@ func (s *Store) ReleaseReservation(ctx context.Context, idemKey, reservationKey 
 		if err := protojson.Unmarshal(envelope.Reservation, result.Reservation); err != nil {
 			return ReleaseReservationResult{}, err
 		}
+	}
+	return result, nil
+}
+
+func (s *Store) ExpireReservations(ctx context.Context, reservationExpiryIndexKey string, now time.Time, batchSize int64) (ExpireReservationsResult, error) {
+	raw, err := s.evalText(ctx, scriptExpireReservations, nil,
+		reservationExpiryIndexKey,
+		now.UnixMilli(),
+		batchSize,
+	)
+	if err != nil {
+		return ExpireReservationsResult{}, err
+	}
+	var result ExpireReservationsResult
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		return ExpireReservationsResult{}, err
 	}
 	return result, nil
 }

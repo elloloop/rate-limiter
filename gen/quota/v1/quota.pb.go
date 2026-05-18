@@ -1324,6 +1324,134 @@ func (x *ReserveResponse) GetReservation() *Reservation {
 	return nil
 }
 
+type IncrementReservationRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	ReservationId string                 `protobuf:"bytes,2,opt,name=reservation_id,json=reservationId,proto3" json:"reservation_id,omitempty"`
+	DeltaCost     int64                  `protobuf:"varint,3,opt,name=delta_cost,json=deltaCost,proto3" json:"delta_cost,omitempty"`
+	Metadata      map[string]string      `protobuf:"bytes,4,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IncrementReservationRequest) Reset() {
+	*x = IncrementReservationRequest{}
+	mi := &file_quota_v1_quota_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IncrementReservationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IncrementReservationRequest) ProtoMessage() {}
+
+func (x *IncrementReservationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_quota_v1_quota_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IncrementReservationRequest.ProtoReflect.Descriptor instead.
+func (*IncrementReservationRequest) Descriptor() ([]byte, []int) {
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *IncrementReservationRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *IncrementReservationRequest) GetReservationId() string {
+	if x != nil {
+		return x.ReservationId
+	}
+	return ""
+}
+
+func (x *IncrementReservationRequest) GetDeltaCost() int64 {
+	if x != nil {
+		return x.DeltaCost
+	}
+	return 0
+}
+
+func (x *IncrementReservationRequest) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
+}
+
+type IncrementReservationResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Decision      *Decision              `protobuf:"bytes,1,opt,name=decision,proto3" json:"decision,omitempty"`
+	ReservedCost  int64                  `protobuf:"varint,2,opt,name=reserved_cost,json=reservedCost,proto3" json:"reserved_cost,omitempty"`
+	Reservation   *Reservation           `protobuf:"bytes,3,opt,name=reservation,proto3" json:"reservation,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IncrementReservationResponse) Reset() {
+	*x = IncrementReservationResponse{}
+	mi := &file_quota_v1_quota_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IncrementReservationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IncrementReservationResponse) ProtoMessage() {}
+
+func (x *IncrementReservationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_quota_v1_quota_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IncrementReservationResponse.ProtoReflect.Descriptor instead.
+func (*IncrementReservationResponse) Descriptor() ([]byte, []int) {
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *IncrementReservationResponse) GetDecision() *Decision {
+	if x != nil {
+		return x.Decision
+	}
+	return nil
+}
+
+func (x *IncrementReservationResponse) GetReservedCost() int64 {
+	if x != nil {
+		return x.ReservedCost
+	}
+	return 0
+}
+
+func (x *IncrementReservationResponse) GetReservation() *Reservation {
+	if x != nil {
+		return x.Reservation
+	}
+	return nil
+}
+
 type FinalizeReservationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -1337,7 +1465,7 @@ type FinalizeReservationRequest struct {
 
 func (x *FinalizeReservationRequest) Reset() {
 	*x = FinalizeReservationRequest{}
-	mi := &file_quota_v1_quota_proto_msgTypes[10]
+	mi := &file_quota_v1_quota_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1349,7 +1477,7 @@ func (x *FinalizeReservationRequest) String() string {
 func (*FinalizeReservationRequest) ProtoMessage() {}
 
 func (x *FinalizeReservationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[10]
+	mi := &file_quota_v1_quota_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1362,7 +1490,7 @@ func (x *FinalizeReservationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FinalizeReservationRequest.ProtoReflect.Descriptor instead.
 func (*FinalizeReservationRequest) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{10}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *FinalizeReservationRequest) GetRequestId() string {
@@ -1414,7 +1542,7 @@ type FinalizeReservationResponse struct {
 
 func (x *FinalizeReservationResponse) Reset() {
 	*x = FinalizeReservationResponse{}
-	mi := &file_quota_v1_quota_proto_msgTypes[11]
+	mi := &file_quota_v1_quota_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1426,7 +1554,7 @@ func (x *FinalizeReservationResponse) String() string {
 func (*FinalizeReservationResponse) ProtoMessage() {}
 
 func (x *FinalizeReservationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[11]
+	mi := &file_quota_v1_quota_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1439,7 +1567,7 @@ func (x *FinalizeReservationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FinalizeReservationResponse.ProtoReflect.Descriptor instead.
 func (*FinalizeReservationResponse) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{11}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *FinalizeReservationResponse) GetReservationId() string {
@@ -1495,7 +1623,7 @@ type ReleaseReservationRequest struct {
 
 func (x *ReleaseReservationRequest) Reset() {
 	*x = ReleaseReservationRequest{}
-	mi := &file_quota_v1_quota_proto_msgTypes[12]
+	mi := &file_quota_v1_quota_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1507,7 +1635,7 @@ func (x *ReleaseReservationRequest) String() string {
 func (*ReleaseReservationRequest) ProtoMessage() {}
 
 func (x *ReleaseReservationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[12]
+	mi := &file_quota_v1_quota_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1520,7 +1648,7 @@ func (x *ReleaseReservationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseReservationRequest.ProtoReflect.Descriptor instead.
 func (*ReleaseReservationRequest) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{12}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ReleaseReservationRequest) GetRequestId() string {
@@ -1555,7 +1683,7 @@ type ReleaseReservationResponse struct {
 
 func (x *ReleaseReservationResponse) Reset() {
 	*x = ReleaseReservationResponse{}
-	mi := &file_quota_v1_quota_proto_msgTypes[13]
+	mi := &file_quota_v1_quota_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1567,7 +1695,7 @@ func (x *ReleaseReservationResponse) String() string {
 func (*ReleaseReservationResponse) ProtoMessage() {}
 
 func (x *ReleaseReservationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[13]
+	mi := &file_quota_v1_quota_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1580,7 +1708,7 @@ func (x *ReleaseReservationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseReservationResponse.ProtoReflect.Descriptor instead.
 func (*ReleaseReservationResponse) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{13}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ReleaseReservationResponse) GetReservationId() string {
@@ -1625,7 +1753,7 @@ type Reservation struct {
 
 func (x *Reservation) Reset() {
 	*x = Reservation{}
-	mi := &file_quota_v1_quota_proto_msgTypes[14]
+	mi := &file_quota_v1_quota_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1637,7 +1765,7 @@ func (x *Reservation) String() string {
 func (*Reservation) ProtoMessage() {}
 
 func (x *Reservation) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[14]
+	mi := &file_quota_v1_quota_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1650,7 +1778,7 @@ func (x *Reservation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Reservation.ProtoReflect.Descriptor instead.
 func (*Reservation) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{14}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *Reservation) GetReservationId() string {
@@ -1745,21 +1873,26 @@ func (x *Reservation) GetMetadata() map[string]string {
 }
 
 type ReservationImpact struct {
-	state         protoimpl.MessageState  `protogen:"open.v1"`
-	LimitId       string                  `protobuf:"bytes,1,opt,name=limit_id,json=limitId,proto3" json:"limit_id,omitempty"`
-	ScopeKey      string                  `protobuf:"bytes,2,opt,name=scope_key,json=scopeKey,proto3" json:"scope_key,omitempty"`
-	RedisKey      string                  `protobuf:"bytes,3,opt,name=redis_key,json=redisKey,proto3" json:"redis_key,omitempty"`
-	Algorithm     Algorithm               `protobuf:"varint,4,opt,name=algorithm,proto3,enum=quota.v1.Algorithm" json:"algorithm,omitempty"`
-	ReservedCost  int64                   `protobuf:"varint,5,opt,name=reserved_cost,json=reservedCost,proto3" json:"reserved_cost,omitempty"`
-	Refundable    bool                    `protobuf:"varint,6,opt,name=refundable,proto3" json:"refundable,omitempty"`
-	ExpiryPolicy  ReservationExpiryPolicy `protobuf:"varint,7,opt,name=expiry_policy,json=expiryPolicy,proto3,enum=quota.v1.ReservationExpiryPolicy" json:"expiry_policy,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState  `protogen:"open.v1"`
+	LimitId          string                  `protobuf:"bytes,1,opt,name=limit_id,json=limitId,proto3" json:"limit_id,omitempty"`
+	ScopeKey         string                  `protobuf:"bytes,2,opt,name=scope_key,json=scopeKey,proto3" json:"scope_key,omitempty"`
+	RedisKey         string                  `protobuf:"bytes,3,opt,name=redis_key,json=redisKey,proto3" json:"redis_key,omitempty"`
+	Algorithm        Algorithm               `protobuf:"varint,4,opt,name=algorithm,proto3,enum=quota.v1.Algorithm" json:"algorithm,omitempty"`
+	ReservedCost     int64                   `protobuf:"varint,5,opt,name=reserved_cost,json=reservedCost,proto3" json:"reserved_cost,omitempty"`
+	Refundable       bool                    `protobuf:"varint,6,opt,name=refundable,proto3" json:"refundable,omitempty"`
+	ExpiryPolicy     ReservationExpiryPolicy `protobuf:"varint,7,opt,name=expiry_policy,json=expiryPolicy,proto3,enum=quota.v1.ReservationExpiryPolicy" json:"expiry_policy,omitempty"`
+	Limit            int64                   `protobuf:"varint,8,opt,name=limit,proto3" json:"limit,omitempty"`
+	Burst            int64                   `protobuf:"varint,9,opt,name=burst,proto3" json:"burst,omitempty"`
+	RefillRatePerSec float64                 `protobuf:"fixed64,10,opt,name=refill_rate_per_sec,json=refillRatePerSec,proto3" json:"refill_rate_per_sec,omitempty"`
+	ResetAtUnixMs    int64                   `protobuf:"varint,11,opt,name=reset_at_unix_ms,json=resetAtUnixMs,proto3" json:"reset_at_unix_ms,omitempty"`
+	Unit             string                  `protobuf:"bytes,12,opt,name=unit,proto3" json:"unit,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ReservationImpact) Reset() {
 	*x = ReservationImpact{}
-	mi := &file_quota_v1_quota_proto_msgTypes[15]
+	mi := &file_quota_v1_quota_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1771,7 +1904,7 @@ func (x *ReservationImpact) String() string {
 func (*ReservationImpact) ProtoMessage() {}
 
 func (x *ReservationImpact) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[15]
+	mi := &file_quota_v1_quota_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1784,7 +1917,7 @@ func (x *ReservationImpact) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReservationImpact.ProtoReflect.Descriptor instead.
 func (*ReservationImpact) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{15}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ReservationImpact) GetLimitId() string {
@@ -1836,6 +1969,41 @@ func (x *ReservationImpact) GetExpiryPolicy() ReservationExpiryPolicy {
 	return ReservationExpiryPolicy_RESERVATION_EXPIRY_POLICY_UNSPECIFIED
 }
 
+func (x *ReservationImpact) GetLimit() int64 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *ReservationImpact) GetBurst() int64 {
+	if x != nil {
+		return x.Burst
+	}
+	return 0
+}
+
+func (x *ReservationImpact) GetRefillRatePerSec() float64 {
+	if x != nil {
+		return x.RefillRatePerSec
+	}
+	return 0
+}
+
+func (x *ReservationImpact) GetResetAtUnixMs() int64 {
+	if x != nil {
+		return x.ResetAtUnixMs
+	}
+	return 0
+}
+
+func (x *ReservationImpact) GetUnit() string {
+	if x != nil {
+		return x.Unit
+	}
+	return ""
+}
+
 type AcquireLeaseRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -1850,7 +2018,7 @@ type AcquireLeaseRequest struct {
 
 func (x *AcquireLeaseRequest) Reset() {
 	*x = AcquireLeaseRequest{}
-	mi := &file_quota_v1_quota_proto_msgTypes[16]
+	mi := &file_quota_v1_quota_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1862,7 +2030,7 @@ func (x *AcquireLeaseRequest) String() string {
 func (*AcquireLeaseRequest) ProtoMessage() {}
 
 func (x *AcquireLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[16]
+	mi := &file_quota_v1_quota_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1875,7 +2043,7 @@ func (x *AcquireLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcquireLeaseRequest.ProtoReflect.Descriptor instead.
 func (*AcquireLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{16}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *AcquireLeaseRequest) GetRequestId() string {
@@ -1930,7 +2098,7 @@ type AcquireLeaseResponse struct {
 
 func (x *AcquireLeaseResponse) Reset() {
 	*x = AcquireLeaseResponse{}
-	mi := &file_quota_v1_quota_proto_msgTypes[17]
+	mi := &file_quota_v1_quota_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1942,7 +2110,7 @@ func (x *AcquireLeaseResponse) String() string {
 func (*AcquireLeaseResponse) ProtoMessage() {}
 
 func (x *AcquireLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[17]
+	mi := &file_quota_v1_quota_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1955,7 +2123,7 @@ func (x *AcquireLeaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcquireLeaseResponse.ProtoReflect.Descriptor instead.
 func (*AcquireLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{17}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *AcquireLeaseResponse) GetDecision() *Decision {
@@ -1983,7 +2151,7 @@ type RenewLeaseRequest struct {
 
 func (x *RenewLeaseRequest) Reset() {
 	*x = RenewLeaseRequest{}
-	mi := &file_quota_v1_quota_proto_msgTypes[18]
+	mi := &file_quota_v1_quota_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1995,7 +2163,7 @@ func (x *RenewLeaseRequest) String() string {
 func (*RenewLeaseRequest) ProtoMessage() {}
 
 func (x *RenewLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[18]
+	mi := &file_quota_v1_quota_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2008,7 +2176,7 @@ func (x *RenewLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewLeaseRequest.ProtoReflect.Descriptor instead.
 func (*RenewLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{18}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *RenewLeaseRequest) GetRequestId() string {
@@ -2042,7 +2210,7 @@ type RenewLeaseResponse struct {
 
 func (x *RenewLeaseResponse) Reset() {
 	*x = RenewLeaseResponse{}
-	mi := &file_quota_v1_quota_proto_msgTypes[19]
+	mi := &file_quota_v1_quota_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2054,7 +2222,7 @@ func (x *RenewLeaseResponse) String() string {
 func (*RenewLeaseResponse) ProtoMessage() {}
 
 func (x *RenewLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[19]
+	mi := &file_quota_v1_quota_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2067,7 +2235,7 @@ func (x *RenewLeaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewLeaseResponse.ProtoReflect.Descriptor instead.
 func (*RenewLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{19}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *RenewLeaseResponse) GetLease() *Lease {
@@ -2094,7 +2262,7 @@ type ReleaseLeaseRequest struct {
 
 func (x *ReleaseLeaseRequest) Reset() {
 	*x = ReleaseLeaseRequest{}
-	mi := &file_quota_v1_quota_proto_msgTypes[20]
+	mi := &file_quota_v1_quota_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2106,7 +2274,7 @@ func (x *ReleaseLeaseRequest) String() string {
 func (*ReleaseLeaseRequest) ProtoMessage() {}
 
 func (x *ReleaseLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[20]
+	mi := &file_quota_v1_quota_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2119,7 +2287,7 @@ func (x *ReleaseLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseLeaseRequest.ProtoReflect.Descriptor instead.
 func (*ReleaseLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{20}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ReleaseLeaseRequest) GetRequestId() string {
@@ -2146,7 +2314,7 @@ type ReleaseLeaseResponse struct {
 
 func (x *ReleaseLeaseResponse) Reset() {
 	*x = ReleaseLeaseResponse{}
-	mi := &file_quota_v1_quota_proto_msgTypes[21]
+	mi := &file_quota_v1_quota_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2158,7 +2326,7 @@ func (x *ReleaseLeaseResponse) String() string {
 func (*ReleaseLeaseResponse) ProtoMessage() {}
 
 func (x *ReleaseLeaseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[21]
+	mi := &file_quota_v1_quota_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2171,7 +2339,7 @@ func (x *ReleaseLeaseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReleaseLeaseResponse.ProtoReflect.Descriptor instead.
 func (*ReleaseLeaseResponse) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{21}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ReleaseLeaseResponse) GetLeaseId() string {
@@ -2203,7 +2371,7 @@ type Lease struct {
 
 func (x *Lease) Reset() {
 	*x = Lease{}
-	mi := &file_quota_v1_quota_proto_msgTypes[22]
+	mi := &file_quota_v1_quota_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2215,7 +2383,7 @@ func (x *Lease) String() string {
 func (*Lease) ProtoMessage() {}
 
 func (x *Lease) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[22]
+	mi := &file_quota_v1_quota_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2228,7 +2396,7 @@ func (x *Lease) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Lease.ProtoReflect.Descriptor instead.
 func (*Lease) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{22}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *Lease) GetLeaseId() string {
@@ -2291,7 +2459,7 @@ type LeaseImpact struct {
 
 func (x *LeaseImpact) Reset() {
 	*x = LeaseImpact{}
-	mi := &file_quota_v1_quota_proto_msgTypes[23]
+	mi := &file_quota_v1_quota_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2303,7 +2471,7 @@ func (x *LeaseImpact) String() string {
 func (*LeaseImpact) ProtoMessage() {}
 
 func (x *LeaseImpact) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[23]
+	mi := &file_quota_v1_quota_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2316,7 +2484,7 @@ func (x *LeaseImpact) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeaseImpact.ProtoReflect.Descriptor instead.
 func (*LeaseImpact) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{23}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *LeaseImpact) GetLimitId() string {
@@ -2352,7 +2520,7 @@ type ExplainRequest struct {
 
 func (x *ExplainRequest) Reset() {
 	*x = ExplainRequest{}
-	mi := &file_quota_v1_quota_proto_msgTypes[24]
+	mi := &file_quota_v1_quota_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2364,7 +2532,7 @@ func (x *ExplainRequest) String() string {
 func (*ExplainRequest) ProtoMessage() {}
 
 func (x *ExplainRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[24]
+	mi := &file_quota_v1_quota_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2377,7 +2545,7 @@ func (x *ExplainRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExplainRequest.ProtoReflect.Descriptor instead.
 func (*ExplainRequest) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{24}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ExplainRequest) GetContext() *RequestContext {
@@ -2420,7 +2588,7 @@ type ExplainResponse struct {
 
 func (x *ExplainResponse) Reset() {
 	*x = ExplainResponse{}
-	mi := &file_quota_v1_quota_proto_msgTypes[25]
+	mi := &file_quota_v1_quota_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2432,7 +2600,7 @@ func (x *ExplainResponse) String() string {
 func (*ExplainResponse) ProtoMessage() {}
 
 func (x *ExplainResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[25]
+	mi := &file_quota_v1_quota_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2445,7 +2613,7 @@ func (x *ExplainResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExplainResponse.ProtoReflect.Descriptor instead.
 func (*ExplainResponse) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{25}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ExplainResponse) GetWouldAllow() bool {
@@ -2490,7 +2658,7 @@ type LimitEvaluation struct {
 
 func (x *LimitEvaluation) Reset() {
 	*x = LimitEvaluation{}
-	mi := &file_quota_v1_quota_proto_msgTypes[26]
+	mi := &file_quota_v1_quota_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2502,7 +2670,7 @@ func (x *LimitEvaluation) String() string {
 func (*LimitEvaluation) ProtoMessage() {}
 
 func (x *LimitEvaluation) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[26]
+	mi := &file_quota_v1_quota_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2515,7 +2683,7 @@ func (x *LimitEvaluation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LimitEvaluation.ProtoReflect.Descriptor instead.
 func (*LimitEvaluation) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{26}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *LimitEvaluation) GetLimitId() string {
@@ -2571,7 +2739,7 @@ type GetCurrentUsageRequest struct {
 
 func (x *GetCurrentUsageRequest) Reset() {
 	*x = GetCurrentUsageRequest{}
-	mi := &file_quota_v1_quota_proto_msgTypes[27]
+	mi := &file_quota_v1_quota_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2583,7 +2751,7 @@ func (x *GetCurrentUsageRequest) String() string {
 func (*GetCurrentUsageRequest) ProtoMessage() {}
 
 func (x *GetCurrentUsageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[27]
+	mi := &file_quota_v1_quota_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2596,7 +2764,7 @@ func (x *GetCurrentUsageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCurrentUsageRequest.ProtoReflect.Descriptor instead.
 func (*GetCurrentUsageRequest) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{27}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *GetCurrentUsageRequest) GetContext() *RequestContext {
@@ -2629,7 +2797,7 @@ type GetCurrentUsageResponse struct {
 
 func (x *GetCurrentUsageResponse) Reset() {
 	*x = GetCurrentUsageResponse{}
-	mi := &file_quota_v1_quota_proto_msgTypes[28]
+	mi := &file_quota_v1_quota_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2641,7 +2809,7 @@ func (x *GetCurrentUsageResponse) String() string {
 func (*GetCurrentUsageResponse) ProtoMessage() {}
 
 func (x *GetCurrentUsageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[28]
+	mi := &file_quota_v1_quota_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2654,7 +2822,7 @@ func (x *GetCurrentUsageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCurrentUsageResponse.ProtoReflect.Descriptor instead.
 func (*GetCurrentUsageResponse) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{28}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *GetCurrentUsageResponse) GetLimitStatuses() []*LimitStatus {
@@ -2673,7 +2841,7 @@ type ValidateLimitsRequest struct {
 
 func (x *ValidateLimitsRequest) Reset() {
 	*x = ValidateLimitsRequest{}
-	mi := &file_quota_v1_quota_proto_msgTypes[29]
+	mi := &file_quota_v1_quota_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2685,7 +2853,7 @@ func (x *ValidateLimitsRequest) String() string {
 func (*ValidateLimitsRequest) ProtoMessage() {}
 
 func (x *ValidateLimitsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[29]
+	mi := &file_quota_v1_quota_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2698,7 +2866,7 @@ func (x *ValidateLimitsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidateLimitsRequest.ProtoReflect.Descriptor instead.
 func (*ValidateLimitsRequest) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{29}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ValidateLimitsRequest) GetLimits() []*Limit {
@@ -2719,7 +2887,7 @@ type ValidateLimitsResponse struct {
 
 func (x *ValidateLimitsResponse) Reset() {
 	*x = ValidateLimitsResponse{}
-	mi := &file_quota_v1_quota_proto_msgTypes[30]
+	mi := &file_quota_v1_quota_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2731,7 +2899,7 @@ func (x *ValidateLimitsResponse) String() string {
 func (*ValidateLimitsResponse) ProtoMessage() {}
 
 func (x *ValidateLimitsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[30]
+	mi := &file_quota_v1_quota_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2744,7 +2912,7 @@ func (x *ValidateLimitsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidateLimitsResponse.ProtoReflect.Descriptor instead.
 func (*ValidateLimitsResponse) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{30}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ValidateLimitsResponse) GetValid() bool {
@@ -2779,7 +2947,7 @@ type ValidationError struct {
 
 func (x *ValidationError) Reset() {
 	*x = ValidationError{}
-	mi := &file_quota_v1_quota_proto_msgTypes[31]
+	mi := &file_quota_v1_quota_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2791,7 +2959,7 @@ func (x *ValidationError) String() string {
 func (*ValidationError) ProtoMessage() {}
 
 func (x *ValidationError) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[31]
+	mi := &file_quota_v1_quota_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2804,7 +2972,7 @@ func (x *ValidationError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidationError.ProtoReflect.Descriptor instead.
 func (*ValidationError) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{31}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ValidationError) GetLimitId() string {
@@ -2839,7 +3007,7 @@ type ValidationWarning struct {
 
 func (x *ValidationWarning) Reset() {
 	*x = ValidationWarning{}
-	mi := &file_quota_v1_quota_proto_msgTypes[32]
+	mi := &file_quota_v1_quota_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2851,7 +3019,7 @@ func (x *ValidationWarning) String() string {
 func (*ValidationWarning) ProtoMessage() {}
 
 func (x *ValidationWarning) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[32]
+	mi := &file_quota_v1_quota_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2864,7 +3032,7 @@ func (x *ValidationWarning) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidationWarning.ProtoReflect.Descriptor instead.
 func (*ValidationWarning) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{32}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *ValidationWarning) GetLimitId() string {
@@ -2897,7 +3065,7 @@ type GetReservationRequest struct {
 
 func (x *GetReservationRequest) Reset() {
 	*x = GetReservationRequest{}
-	mi := &file_quota_v1_quota_proto_msgTypes[33]
+	mi := &file_quota_v1_quota_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2909,7 +3077,7 @@ func (x *GetReservationRequest) String() string {
 func (*GetReservationRequest) ProtoMessage() {}
 
 func (x *GetReservationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[33]
+	mi := &file_quota_v1_quota_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2922,7 +3090,7 @@ func (x *GetReservationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetReservationRequest.ProtoReflect.Descriptor instead.
 func (*GetReservationRequest) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{33}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *GetReservationRequest) GetReservationId() string {
@@ -2941,7 +3109,7 @@ type GetLeaseRequest struct {
 
 func (x *GetLeaseRequest) Reset() {
 	*x = GetLeaseRequest{}
-	mi := &file_quota_v1_quota_proto_msgTypes[34]
+	mi := &file_quota_v1_quota_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2953,7 +3121,7 @@ func (x *GetLeaseRequest) String() string {
 func (*GetLeaseRequest) ProtoMessage() {}
 
 func (x *GetLeaseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[34]
+	mi := &file_quota_v1_quota_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2966,7 +3134,7 @@ func (x *GetLeaseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLeaseRequest.ProtoReflect.Descriptor instead.
 func (*GetLeaseRequest) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{34}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *GetLeaseRequest) GetLeaseId() string {
@@ -2984,7 +3152,7 @@ type GetRedisStatusRequest struct {
 
 func (x *GetRedisStatusRequest) Reset() {
 	*x = GetRedisStatusRequest{}
-	mi := &file_quota_v1_quota_proto_msgTypes[35]
+	mi := &file_quota_v1_quota_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2996,7 +3164,7 @@ func (x *GetRedisStatusRequest) String() string {
 func (*GetRedisStatusRequest) ProtoMessage() {}
 
 func (x *GetRedisStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[35]
+	mi := &file_quota_v1_quota_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3009,7 +3177,7 @@ func (x *GetRedisStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRedisStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetRedisStatusRequest) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{35}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{37}
 }
 
 type RedisStatus struct {
@@ -3024,7 +3192,7 @@ type RedisStatus struct {
 
 func (x *RedisStatus) Reset() {
 	*x = RedisStatus{}
-	mi := &file_quota_v1_quota_proto_msgTypes[36]
+	mi := &file_quota_v1_quota_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3036,7 +3204,7 @@ func (x *RedisStatus) String() string {
 func (*RedisStatus) ProtoMessage() {}
 
 func (x *RedisStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_quota_v1_quota_proto_msgTypes[36]
+	mi := &file_quota_v1_quota_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3049,7 +3217,7 @@ func (x *RedisStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RedisStatus.ProtoReflect.Descriptor instead.
 func (*RedisStatus) Descriptor() ([]byte, []int) {
-	return file_quota_v1_quota_proto_rawDescGZIP(), []int{36}
+	return file_quota_v1_quota_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *RedisStatus) GetReachable() bool {
@@ -3174,7 +3342,21 @@ const file_quota_v1_quota_proto_rawDesc = "" +
 	"\aoptions\x18\a \x01(\v2\x18.quota.v1.RequestOptionsR\aoptions\"z\n" +
 	"\x0fReserveResponse\x12.\n" +
 	"\bdecision\x18\x01 \x01(\v2\x12.quota.v1.DecisionR\bdecision\x127\n" +
-	"\vreservation\x18\x02 \x01(\v2\x15.quota.v1.ReservationR\vreservation\"\xc2\x02\n" +
+	"\vreservation\x18\x02 \x01(\v2\x15.quota.v1.ReservationR\vreservation\"\x90\x02\n" +
+	"\x1bIncrementReservationRequest\x12\x1d\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
+	"\x0ereservation_id\x18\x02 \x01(\tR\rreservationId\x12\x1d\n" +
+	"\n" +
+	"delta_cost\x18\x03 \x01(\x03R\tdeltaCost\x12O\n" +
+	"\bmetadata\x18\x04 \x03(\v23.quota.v1.IncrementReservationRequest.MetadataEntryR\bmetadata\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xac\x01\n" +
+	"\x1cIncrementReservationResponse\x12.\n" +
+	"\bdecision\x18\x01 \x01(\v2\x12.quota.v1.DecisionR\bdecision\x12#\n" +
+	"\rreserved_cost\x18\x02 \x01(\x03R\freservedCost\x127\n" +
+	"\vreservation\x18\x03 \x01(\v2\x15.quota.v1.ReservationR\vreservation\"\xc2\x02\n" +
 	"\x1aFinalizeReservationRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x12%\n" +
@@ -3221,7 +3403,7 @@ const file_quota_v1_quota_proto_rawDesc = "" +
 	"\bmetadata\x18\r \x03(\v2#.quota.v1.Reservation.MetadataEntryR\bmetadata\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa8\x02\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc0\x03\n" +
 	"\x11ReservationImpact\x12\x19\n" +
 	"\blimit_id\x18\x01 \x01(\tR\alimitId\x12\x1b\n" +
 	"\tscope_key\x18\x02 \x01(\tR\bscopeKey\x12\x1b\n" +
@@ -3231,7 +3413,13 @@ const file_quota_v1_quota_proto_rawDesc = "" +
 	"\n" +
 	"refundable\x18\x06 \x01(\bR\n" +
 	"refundable\x12F\n" +
-	"\rexpiry_policy\x18\a \x01(\x0e2!.quota.v1.ReservationExpiryPolicyR\fexpiryPolicy\"\xff\x01\n" +
+	"\rexpiry_policy\x18\a \x01(\x0e2!.quota.v1.ReservationExpiryPolicyR\fexpiryPolicy\x12\x14\n" +
+	"\x05limit\x18\b \x01(\x03R\x05limit\x12\x14\n" +
+	"\x05burst\x18\t \x01(\x03R\x05burst\x12-\n" +
+	"\x13refill_rate_per_sec\x18\n" +
+	" \x01(\x01R\x10refillRatePerSec\x12'\n" +
+	"\x10reset_at_unix_ms\x18\v \x01(\x03R\rresetAtUnixMs\x12\x12\n" +
+	"\x04unit\x18\f \x01(\tR\x04unit\"\xff\x01\n" +
 	"\x13AcquireLeaseRequest\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x122\n" +
@@ -3374,10 +3562,11 @@ const file_quota_v1_quota_proto_rawDesc = "" +
 	"\x18LEASE_STATUS_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13LEASE_STATUS_ACTIVE\x10\x01\x12\x19\n" +
 	"\x15LEASE_STATUS_RELEASED\x10\x02\x12\x18\n" +
-	"\x14LEASE_STATUS_EXPIRED\x10\x032\xf3\a\n" +
+	"\x14LEASE_STATUS_EXPIRED\x10\x032\xda\b\n" +
 	"\fQuotaService\x12>\n" +
 	"\aConsume\x12\x18.quota.v1.ConsumeRequest\x1a\x19.quota.v1.ConsumeResponse\x12>\n" +
-	"\aReserve\x12\x18.quota.v1.ReserveRequest\x1a\x19.quota.v1.ReserveResponse\x12b\n" +
+	"\aReserve\x12\x18.quota.v1.ReserveRequest\x1a\x19.quota.v1.ReserveResponse\x12e\n" +
+	"\x14IncrementReservation\x12%.quota.v1.IncrementReservationRequest\x1a&.quota.v1.IncrementReservationResponse\x12b\n" +
 	"\x13FinalizeReservation\x12$.quota.v1.FinalizeReservationRequest\x1a%.quota.v1.FinalizeReservationResponse\x12_\n" +
 	"\x12ReleaseReservation\x12#.quota.v1.ReleaseReservationRequest\x1a$.quota.v1.ReleaseReservationResponse\x12M\n" +
 	"\fAcquireLease\x12\x1d.quota.v1.AcquireLeaseRequest\x1a\x1e.quota.v1.AcquireLeaseResponse\x12G\n" +
@@ -3404,70 +3593,73 @@ func file_quota_v1_quota_proto_rawDescGZIP() []byte {
 }
 
 var file_quota_v1_quota_proto_enumTypes = make([]protoimpl.EnumInfo, 8)
-var file_quota_v1_quota_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
+var file_quota_v1_quota_proto_msgTypes = make([]protoimpl.MessageInfo, 45)
 var file_quota_v1_quota_proto_goTypes = []any{
-	(DecisionReason)(0),                 // 0: quota.v1.DecisionReason
-	(Algorithm)(0),                      // 1: quota.v1.Algorithm
-	(WindowType)(0),                     // 2: quota.v1.WindowType
-	(CalendarUnit)(0),                   // 3: quota.v1.CalendarUnit
-	(ReservationExpiryPolicy)(0),        // 4: quota.v1.ReservationExpiryPolicy
-	(FinalizeStatus)(0),                 // 5: quota.v1.FinalizeStatus
-	(ReservationStatus)(0),              // 6: quota.v1.ReservationStatus
-	(LeaseStatus)(0),                    // 7: quota.v1.LeaseStatus
-	(*RequestContext)(nil),              // 8: quota.v1.RequestContext
-	(*RequestOptions)(nil),              // 9: quota.v1.RequestOptions
-	(*Decision)(nil),                    // 10: quota.v1.Decision
-	(*LimitStatus)(nil),                 // 11: quota.v1.LimitStatus
-	(*Limit)(nil),                       // 12: quota.v1.Limit
-	(*Window)(nil),                      // 13: quota.v1.Window
-	(*ConsumeRequest)(nil),              // 14: quota.v1.ConsumeRequest
-	(*ConsumeResponse)(nil),             // 15: quota.v1.ConsumeResponse
-	(*ReserveRequest)(nil),              // 16: quota.v1.ReserveRequest
-	(*ReserveResponse)(nil),             // 17: quota.v1.ReserveResponse
-	(*FinalizeReservationRequest)(nil),  // 18: quota.v1.FinalizeReservationRequest
-	(*FinalizeReservationResponse)(nil), // 19: quota.v1.FinalizeReservationResponse
-	(*ReleaseReservationRequest)(nil),   // 20: quota.v1.ReleaseReservationRequest
-	(*ReleaseReservationResponse)(nil),  // 21: quota.v1.ReleaseReservationResponse
-	(*Reservation)(nil),                 // 22: quota.v1.Reservation
-	(*ReservationImpact)(nil),           // 23: quota.v1.ReservationImpact
-	(*AcquireLeaseRequest)(nil),         // 24: quota.v1.AcquireLeaseRequest
-	(*AcquireLeaseResponse)(nil),        // 25: quota.v1.AcquireLeaseResponse
-	(*RenewLeaseRequest)(nil),           // 26: quota.v1.RenewLeaseRequest
-	(*RenewLeaseResponse)(nil),          // 27: quota.v1.RenewLeaseResponse
-	(*ReleaseLeaseRequest)(nil),         // 28: quota.v1.ReleaseLeaseRequest
-	(*ReleaseLeaseResponse)(nil),        // 29: quota.v1.ReleaseLeaseResponse
-	(*Lease)(nil),                       // 30: quota.v1.Lease
-	(*LeaseImpact)(nil),                 // 31: quota.v1.LeaseImpact
-	(*ExplainRequest)(nil),              // 32: quota.v1.ExplainRequest
-	(*ExplainResponse)(nil),             // 33: quota.v1.ExplainResponse
-	(*LimitEvaluation)(nil),             // 34: quota.v1.LimitEvaluation
-	(*GetCurrentUsageRequest)(nil),      // 35: quota.v1.GetCurrentUsageRequest
-	(*GetCurrentUsageResponse)(nil),     // 36: quota.v1.GetCurrentUsageResponse
-	(*ValidateLimitsRequest)(nil),       // 37: quota.v1.ValidateLimitsRequest
-	(*ValidateLimitsResponse)(nil),      // 38: quota.v1.ValidateLimitsResponse
-	(*ValidationError)(nil),             // 39: quota.v1.ValidationError
-	(*ValidationWarning)(nil),           // 40: quota.v1.ValidationWarning
-	(*GetReservationRequest)(nil),       // 41: quota.v1.GetReservationRequest
-	(*GetLeaseRequest)(nil),             // 42: quota.v1.GetLeaseRequest
-	(*GetRedisStatusRequest)(nil),       // 43: quota.v1.GetRedisStatusRequest
-	(*RedisStatus)(nil),                 // 44: quota.v1.RedisStatus
-	nil,                                 // 45: quota.v1.RequestContext.MetadataEntry
-	nil,                                 // 46: quota.v1.Decision.MetadataEntry
-	nil,                                 // 47: quota.v1.Limit.MetadataEntry
-	nil,                                 // 48: quota.v1.FinalizeReservationRequest.MetadataEntry
-	nil,                                 // 49: quota.v1.Reservation.MetadataEntry
+	(DecisionReason)(0),                  // 0: quota.v1.DecisionReason
+	(Algorithm)(0),                       // 1: quota.v1.Algorithm
+	(WindowType)(0),                      // 2: quota.v1.WindowType
+	(CalendarUnit)(0),                    // 3: quota.v1.CalendarUnit
+	(ReservationExpiryPolicy)(0),         // 4: quota.v1.ReservationExpiryPolicy
+	(FinalizeStatus)(0),                  // 5: quota.v1.FinalizeStatus
+	(ReservationStatus)(0),               // 6: quota.v1.ReservationStatus
+	(LeaseStatus)(0),                     // 7: quota.v1.LeaseStatus
+	(*RequestContext)(nil),               // 8: quota.v1.RequestContext
+	(*RequestOptions)(nil),               // 9: quota.v1.RequestOptions
+	(*Decision)(nil),                     // 10: quota.v1.Decision
+	(*LimitStatus)(nil),                  // 11: quota.v1.LimitStatus
+	(*Limit)(nil),                        // 12: quota.v1.Limit
+	(*Window)(nil),                       // 13: quota.v1.Window
+	(*ConsumeRequest)(nil),               // 14: quota.v1.ConsumeRequest
+	(*ConsumeResponse)(nil),              // 15: quota.v1.ConsumeResponse
+	(*ReserveRequest)(nil),               // 16: quota.v1.ReserveRequest
+	(*ReserveResponse)(nil),              // 17: quota.v1.ReserveResponse
+	(*IncrementReservationRequest)(nil),  // 18: quota.v1.IncrementReservationRequest
+	(*IncrementReservationResponse)(nil), // 19: quota.v1.IncrementReservationResponse
+	(*FinalizeReservationRequest)(nil),   // 20: quota.v1.FinalizeReservationRequest
+	(*FinalizeReservationResponse)(nil),  // 21: quota.v1.FinalizeReservationResponse
+	(*ReleaseReservationRequest)(nil),    // 22: quota.v1.ReleaseReservationRequest
+	(*ReleaseReservationResponse)(nil),   // 23: quota.v1.ReleaseReservationResponse
+	(*Reservation)(nil),                  // 24: quota.v1.Reservation
+	(*ReservationImpact)(nil),            // 25: quota.v1.ReservationImpact
+	(*AcquireLeaseRequest)(nil),          // 26: quota.v1.AcquireLeaseRequest
+	(*AcquireLeaseResponse)(nil),         // 27: quota.v1.AcquireLeaseResponse
+	(*RenewLeaseRequest)(nil),            // 28: quota.v1.RenewLeaseRequest
+	(*RenewLeaseResponse)(nil),           // 29: quota.v1.RenewLeaseResponse
+	(*ReleaseLeaseRequest)(nil),          // 30: quota.v1.ReleaseLeaseRequest
+	(*ReleaseLeaseResponse)(nil),         // 31: quota.v1.ReleaseLeaseResponse
+	(*Lease)(nil),                        // 32: quota.v1.Lease
+	(*LeaseImpact)(nil),                  // 33: quota.v1.LeaseImpact
+	(*ExplainRequest)(nil),               // 34: quota.v1.ExplainRequest
+	(*ExplainResponse)(nil),              // 35: quota.v1.ExplainResponse
+	(*LimitEvaluation)(nil),              // 36: quota.v1.LimitEvaluation
+	(*GetCurrentUsageRequest)(nil),       // 37: quota.v1.GetCurrentUsageRequest
+	(*GetCurrentUsageResponse)(nil),      // 38: quota.v1.GetCurrentUsageResponse
+	(*ValidateLimitsRequest)(nil),        // 39: quota.v1.ValidateLimitsRequest
+	(*ValidateLimitsResponse)(nil),       // 40: quota.v1.ValidateLimitsResponse
+	(*ValidationError)(nil),              // 41: quota.v1.ValidationError
+	(*ValidationWarning)(nil),            // 42: quota.v1.ValidationWarning
+	(*GetReservationRequest)(nil),        // 43: quota.v1.GetReservationRequest
+	(*GetLeaseRequest)(nil),              // 44: quota.v1.GetLeaseRequest
+	(*GetRedisStatusRequest)(nil),        // 45: quota.v1.GetRedisStatusRequest
+	(*RedisStatus)(nil),                  // 46: quota.v1.RedisStatus
+	nil,                                  // 47: quota.v1.RequestContext.MetadataEntry
+	nil,                                  // 48: quota.v1.Decision.MetadataEntry
+	nil,                                  // 49: quota.v1.Limit.MetadataEntry
+	nil,                                  // 50: quota.v1.IncrementReservationRequest.MetadataEntry
+	nil,                                  // 51: quota.v1.FinalizeReservationRequest.MetadataEntry
+	nil,                                  // 52: quota.v1.Reservation.MetadataEntry
 }
 var file_quota_v1_quota_proto_depIdxs = []int32{
-	45, // 0: quota.v1.RequestContext.metadata:type_name -> quota.v1.RequestContext.MetadataEntry
+	47, // 0: quota.v1.RequestContext.metadata:type_name -> quota.v1.RequestContext.MetadataEntry
 	0,  // 1: quota.v1.Decision.reason:type_name -> quota.v1.DecisionReason
 	11, // 2: quota.v1.Decision.limit_statuses:type_name -> quota.v1.LimitStatus
-	46, // 3: quota.v1.Decision.metadata:type_name -> quota.v1.Decision.MetadataEntry
+	48, // 3: quota.v1.Decision.metadata:type_name -> quota.v1.Decision.MetadataEntry
 	1,  // 4: quota.v1.LimitStatus.algorithm:type_name -> quota.v1.Algorithm
 	13, // 5: quota.v1.LimitStatus.window:type_name -> quota.v1.Window
 	1,  // 6: quota.v1.Limit.algorithm:type_name -> quota.v1.Algorithm
 	13, // 7: quota.v1.Limit.window:type_name -> quota.v1.Window
 	4,  // 8: quota.v1.Limit.reservation_expiry_policy:type_name -> quota.v1.ReservationExpiryPolicy
-	47, // 9: quota.v1.Limit.metadata:type_name -> quota.v1.Limit.MetadataEntry
+	49, // 9: quota.v1.Limit.metadata:type_name -> quota.v1.Limit.MetadataEntry
 	2,  // 10: quota.v1.Window.type:type_name -> quota.v1.WindowType
 	3,  // 11: quota.v1.Window.calendar_unit:type_name -> quota.v1.CalendarUnit
 	8,  // 12: quota.v1.ConsumeRequest.context:type_name -> quota.v1.RequestContext
@@ -3478,68 +3670,73 @@ var file_quota_v1_quota_proto_depIdxs = []int32{
 	12, // 17: quota.v1.ReserveRequest.limits:type_name -> quota.v1.Limit
 	9,  // 18: quota.v1.ReserveRequest.options:type_name -> quota.v1.RequestOptions
 	10, // 19: quota.v1.ReserveResponse.decision:type_name -> quota.v1.Decision
-	22, // 20: quota.v1.ReserveResponse.reservation:type_name -> quota.v1.Reservation
-	5,  // 21: quota.v1.FinalizeReservationRequest.status:type_name -> quota.v1.FinalizeStatus
-	48, // 22: quota.v1.FinalizeReservationRequest.metadata:type_name -> quota.v1.FinalizeReservationRequest.MetadataEntry
-	8,  // 23: quota.v1.Reservation.context:type_name -> quota.v1.RequestContext
-	6,  // 24: quota.v1.Reservation.status:type_name -> quota.v1.ReservationStatus
-	23, // 25: quota.v1.Reservation.impacts:type_name -> quota.v1.ReservationImpact
-	49, // 26: quota.v1.Reservation.metadata:type_name -> quota.v1.Reservation.MetadataEntry
-	1,  // 27: quota.v1.ReservationImpact.algorithm:type_name -> quota.v1.Algorithm
-	4,  // 28: quota.v1.ReservationImpact.expiry_policy:type_name -> quota.v1.ReservationExpiryPolicy
-	8,  // 29: quota.v1.AcquireLeaseRequest.context:type_name -> quota.v1.RequestContext
-	12, // 30: quota.v1.AcquireLeaseRequest.limits:type_name -> quota.v1.Limit
-	9,  // 31: quota.v1.AcquireLeaseRequest.options:type_name -> quota.v1.RequestOptions
-	10, // 32: quota.v1.AcquireLeaseResponse.decision:type_name -> quota.v1.Decision
-	30, // 33: quota.v1.AcquireLeaseResponse.lease:type_name -> quota.v1.Lease
-	30, // 34: quota.v1.RenewLeaseResponse.lease:type_name -> quota.v1.Lease
-	8,  // 35: quota.v1.Lease.context:type_name -> quota.v1.RequestContext
-	31, // 36: quota.v1.Lease.impacts:type_name -> quota.v1.LeaseImpact
-	7,  // 37: quota.v1.Lease.status:type_name -> quota.v1.LeaseStatus
-	8,  // 38: quota.v1.ExplainRequest.context:type_name -> quota.v1.RequestContext
-	12, // 39: quota.v1.ExplainRequest.limits:type_name -> quota.v1.Limit
-	0,  // 40: quota.v1.ExplainResponse.reason:type_name -> quota.v1.DecisionReason
-	34, // 41: quota.v1.ExplainResponse.evaluations:type_name -> quota.v1.LimitEvaluation
-	11, // 42: quota.v1.LimitEvaluation.current_status:type_name -> quota.v1.LimitStatus
-	39, // 43: quota.v1.LimitEvaluation.validation_errors:type_name -> quota.v1.ValidationError
-	40, // 44: quota.v1.LimitEvaluation.validation_warnings:type_name -> quota.v1.ValidationWarning
-	8,  // 45: quota.v1.GetCurrentUsageRequest.context:type_name -> quota.v1.RequestContext
-	12, // 46: quota.v1.GetCurrentUsageRequest.limits:type_name -> quota.v1.Limit
-	11, // 47: quota.v1.GetCurrentUsageResponse.limit_statuses:type_name -> quota.v1.LimitStatus
-	12, // 48: quota.v1.ValidateLimitsRequest.limits:type_name -> quota.v1.Limit
-	39, // 49: quota.v1.ValidateLimitsResponse.errors:type_name -> quota.v1.ValidationError
-	40, // 50: quota.v1.ValidateLimitsResponse.warnings:type_name -> quota.v1.ValidationWarning
-	14, // 51: quota.v1.QuotaService.Consume:input_type -> quota.v1.ConsumeRequest
-	16, // 52: quota.v1.QuotaService.Reserve:input_type -> quota.v1.ReserveRequest
-	18, // 53: quota.v1.QuotaService.FinalizeReservation:input_type -> quota.v1.FinalizeReservationRequest
-	20, // 54: quota.v1.QuotaService.ReleaseReservation:input_type -> quota.v1.ReleaseReservationRequest
-	24, // 55: quota.v1.QuotaService.AcquireLease:input_type -> quota.v1.AcquireLeaseRequest
-	26, // 56: quota.v1.QuotaService.RenewLease:input_type -> quota.v1.RenewLeaseRequest
-	28, // 57: quota.v1.QuotaService.ReleaseLease:input_type -> quota.v1.ReleaseLeaseRequest
-	32, // 58: quota.v1.QuotaService.Explain:input_type -> quota.v1.ExplainRequest
-	35, // 59: quota.v1.QuotaService.GetCurrentUsage:input_type -> quota.v1.GetCurrentUsageRequest
-	37, // 60: quota.v1.QuotaService.ValidateLimits:input_type -> quota.v1.ValidateLimitsRequest
-	41, // 61: quota.v1.QuotaService.GetReservation:input_type -> quota.v1.GetReservationRequest
-	42, // 62: quota.v1.QuotaService.GetLease:input_type -> quota.v1.GetLeaseRequest
-	43, // 63: quota.v1.QuotaService.GetRedisStatus:input_type -> quota.v1.GetRedisStatusRequest
-	15, // 64: quota.v1.QuotaService.Consume:output_type -> quota.v1.ConsumeResponse
-	17, // 65: quota.v1.QuotaService.Reserve:output_type -> quota.v1.ReserveResponse
-	19, // 66: quota.v1.QuotaService.FinalizeReservation:output_type -> quota.v1.FinalizeReservationResponse
-	21, // 67: quota.v1.QuotaService.ReleaseReservation:output_type -> quota.v1.ReleaseReservationResponse
-	25, // 68: quota.v1.QuotaService.AcquireLease:output_type -> quota.v1.AcquireLeaseResponse
-	27, // 69: quota.v1.QuotaService.RenewLease:output_type -> quota.v1.RenewLeaseResponse
-	29, // 70: quota.v1.QuotaService.ReleaseLease:output_type -> quota.v1.ReleaseLeaseResponse
-	33, // 71: quota.v1.QuotaService.Explain:output_type -> quota.v1.ExplainResponse
-	36, // 72: quota.v1.QuotaService.GetCurrentUsage:output_type -> quota.v1.GetCurrentUsageResponse
-	38, // 73: quota.v1.QuotaService.ValidateLimits:output_type -> quota.v1.ValidateLimitsResponse
-	22, // 74: quota.v1.QuotaService.GetReservation:output_type -> quota.v1.Reservation
-	30, // 75: quota.v1.QuotaService.GetLease:output_type -> quota.v1.Lease
-	44, // 76: quota.v1.QuotaService.GetRedisStatus:output_type -> quota.v1.RedisStatus
-	64, // [64:77] is the sub-list for method output_type
-	51, // [51:64] is the sub-list for method input_type
-	51, // [51:51] is the sub-list for extension type_name
-	51, // [51:51] is the sub-list for extension extendee
-	0,  // [0:51] is the sub-list for field type_name
+	24, // 20: quota.v1.ReserveResponse.reservation:type_name -> quota.v1.Reservation
+	50, // 21: quota.v1.IncrementReservationRequest.metadata:type_name -> quota.v1.IncrementReservationRequest.MetadataEntry
+	10, // 22: quota.v1.IncrementReservationResponse.decision:type_name -> quota.v1.Decision
+	24, // 23: quota.v1.IncrementReservationResponse.reservation:type_name -> quota.v1.Reservation
+	5,  // 24: quota.v1.FinalizeReservationRequest.status:type_name -> quota.v1.FinalizeStatus
+	51, // 25: quota.v1.FinalizeReservationRequest.metadata:type_name -> quota.v1.FinalizeReservationRequest.MetadataEntry
+	8,  // 26: quota.v1.Reservation.context:type_name -> quota.v1.RequestContext
+	6,  // 27: quota.v1.Reservation.status:type_name -> quota.v1.ReservationStatus
+	25, // 28: quota.v1.Reservation.impacts:type_name -> quota.v1.ReservationImpact
+	52, // 29: quota.v1.Reservation.metadata:type_name -> quota.v1.Reservation.MetadataEntry
+	1,  // 30: quota.v1.ReservationImpact.algorithm:type_name -> quota.v1.Algorithm
+	4,  // 31: quota.v1.ReservationImpact.expiry_policy:type_name -> quota.v1.ReservationExpiryPolicy
+	8,  // 32: quota.v1.AcquireLeaseRequest.context:type_name -> quota.v1.RequestContext
+	12, // 33: quota.v1.AcquireLeaseRequest.limits:type_name -> quota.v1.Limit
+	9,  // 34: quota.v1.AcquireLeaseRequest.options:type_name -> quota.v1.RequestOptions
+	10, // 35: quota.v1.AcquireLeaseResponse.decision:type_name -> quota.v1.Decision
+	32, // 36: quota.v1.AcquireLeaseResponse.lease:type_name -> quota.v1.Lease
+	32, // 37: quota.v1.RenewLeaseResponse.lease:type_name -> quota.v1.Lease
+	8,  // 38: quota.v1.Lease.context:type_name -> quota.v1.RequestContext
+	33, // 39: quota.v1.Lease.impacts:type_name -> quota.v1.LeaseImpact
+	7,  // 40: quota.v1.Lease.status:type_name -> quota.v1.LeaseStatus
+	8,  // 41: quota.v1.ExplainRequest.context:type_name -> quota.v1.RequestContext
+	12, // 42: quota.v1.ExplainRequest.limits:type_name -> quota.v1.Limit
+	0,  // 43: quota.v1.ExplainResponse.reason:type_name -> quota.v1.DecisionReason
+	36, // 44: quota.v1.ExplainResponse.evaluations:type_name -> quota.v1.LimitEvaluation
+	11, // 45: quota.v1.LimitEvaluation.current_status:type_name -> quota.v1.LimitStatus
+	41, // 46: quota.v1.LimitEvaluation.validation_errors:type_name -> quota.v1.ValidationError
+	42, // 47: quota.v1.LimitEvaluation.validation_warnings:type_name -> quota.v1.ValidationWarning
+	8,  // 48: quota.v1.GetCurrentUsageRequest.context:type_name -> quota.v1.RequestContext
+	12, // 49: quota.v1.GetCurrentUsageRequest.limits:type_name -> quota.v1.Limit
+	11, // 50: quota.v1.GetCurrentUsageResponse.limit_statuses:type_name -> quota.v1.LimitStatus
+	12, // 51: quota.v1.ValidateLimitsRequest.limits:type_name -> quota.v1.Limit
+	41, // 52: quota.v1.ValidateLimitsResponse.errors:type_name -> quota.v1.ValidationError
+	42, // 53: quota.v1.ValidateLimitsResponse.warnings:type_name -> quota.v1.ValidationWarning
+	14, // 54: quota.v1.QuotaService.Consume:input_type -> quota.v1.ConsumeRequest
+	16, // 55: quota.v1.QuotaService.Reserve:input_type -> quota.v1.ReserveRequest
+	18, // 56: quota.v1.QuotaService.IncrementReservation:input_type -> quota.v1.IncrementReservationRequest
+	20, // 57: quota.v1.QuotaService.FinalizeReservation:input_type -> quota.v1.FinalizeReservationRequest
+	22, // 58: quota.v1.QuotaService.ReleaseReservation:input_type -> quota.v1.ReleaseReservationRequest
+	26, // 59: quota.v1.QuotaService.AcquireLease:input_type -> quota.v1.AcquireLeaseRequest
+	28, // 60: quota.v1.QuotaService.RenewLease:input_type -> quota.v1.RenewLeaseRequest
+	30, // 61: quota.v1.QuotaService.ReleaseLease:input_type -> quota.v1.ReleaseLeaseRequest
+	34, // 62: quota.v1.QuotaService.Explain:input_type -> quota.v1.ExplainRequest
+	37, // 63: quota.v1.QuotaService.GetCurrentUsage:input_type -> quota.v1.GetCurrentUsageRequest
+	39, // 64: quota.v1.QuotaService.ValidateLimits:input_type -> quota.v1.ValidateLimitsRequest
+	43, // 65: quota.v1.QuotaService.GetReservation:input_type -> quota.v1.GetReservationRequest
+	44, // 66: quota.v1.QuotaService.GetLease:input_type -> quota.v1.GetLeaseRequest
+	45, // 67: quota.v1.QuotaService.GetRedisStatus:input_type -> quota.v1.GetRedisStatusRequest
+	15, // 68: quota.v1.QuotaService.Consume:output_type -> quota.v1.ConsumeResponse
+	17, // 69: quota.v1.QuotaService.Reserve:output_type -> quota.v1.ReserveResponse
+	19, // 70: quota.v1.QuotaService.IncrementReservation:output_type -> quota.v1.IncrementReservationResponse
+	21, // 71: quota.v1.QuotaService.FinalizeReservation:output_type -> quota.v1.FinalizeReservationResponse
+	23, // 72: quota.v1.QuotaService.ReleaseReservation:output_type -> quota.v1.ReleaseReservationResponse
+	27, // 73: quota.v1.QuotaService.AcquireLease:output_type -> quota.v1.AcquireLeaseResponse
+	29, // 74: quota.v1.QuotaService.RenewLease:output_type -> quota.v1.RenewLeaseResponse
+	31, // 75: quota.v1.QuotaService.ReleaseLease:output_type -> quota.v1.ReleaseLeaseResponse
+	35, // 76: quota.v1.QuotaService.Explain:output_type -> quota.v1.ExplainResponse
+	38, // 77: quota.v1.QuotaService.GetCurrentUsage:output_type -> quota.v1.GetCurrentUsageResponse
+	40, // 78: quota.v1.QuotaService.ValidateLimits:output_type -> quota.v1.ValidateLimitsResponse
+	24, // 79: quota.v1.QuotaService.GetReservation:output_type -> quota.v1.Reservation
+	32, // 80: quota.v1.QuotaService.GetLease:output_type -> quota.v1.Lease
+	46, // 81: quota.v1.QuotaService.GetRedisStatus:output_type -> quota.v1.RedisStatus
+	68, // [68:82] is the sub-list for method output_type
+	54, // [54:68] is the sub-list for method input_type
+	54, // [54:54] is the sub-list for extension type_name
+	54, // [54:54] is the sub-list for extension extendee
+	0,  // [0:54] is the sub-list for field type_name
 }
 
 func init() { file_quota_v1_quota_proto_init() }
@@ -3553,7 +3750,7 @@ func file_quota_v1_quota_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_quota_v1_quota_proto_rawDesc), len(file_quota_v1_quota_proto_rawDesc)),
 			NumEnums:      8,
-			NumMessages:   42,
+			NumMessages:   45,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

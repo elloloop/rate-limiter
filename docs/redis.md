@@ -22,6 +22,7 @@ quota:v1:{env}:{product}:tb:{limit_id_hash}:{scope_hash}
 quota:v1:{env}:{product}:lb:{limit_id_hash}:{scope_hash}
 quota:v1:{env}:{product}:gcra:{limit_id_hash}:{scope_hash}
 quota:v1:{env}:{product}:res:{reservation_id}
+quota:v1:{env}:{product}:res_expiry
 quota:v1:{env}:{product}:lease_set:{limit_id_hash}:{scope_hash}
 quota:v1:{env}:{product}:lease:{lease_id}
 ```
@@ -34,12 +35,13 @@ characters and to keep key length bounded.
 ```text
 consume.lua
 reserve.lua
+increment_reservation.lua
 finalize_reservation.lua
 release_reservation.lua
+expire_reservations.lua
 acquire_lease.lua
 renew_lease.lua
 release_lease.lua
 ```
 
 All writes must go through these scripts.
-

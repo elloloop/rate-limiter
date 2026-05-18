@@ -38,4 +38,12 @@ quota_event_emit_errors_total`} lang="text" />
     their own short timeout instead of inheriting the caller RPC context, so a
     completed request does not cancel asynchronous event delivery.
   </p>
+
+  <h2>Reservation Expiry</h2>
+  <p>
+    An in-process sweeper expires due reservations from a Redis sorted-set
+    index. Expiry uses stored impact keys, applies
+    <code>REFUND_FULL</code> or <code>CHARGE_FULL</code> policy, and increments
+    <code>quota_reservations_expired_total</code>.
+  </p>
 </DocsLayout>

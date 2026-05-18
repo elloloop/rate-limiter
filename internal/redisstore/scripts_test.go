@@ -10,8 +10,10 @@ func TestRequiredScriptsAreEmbedded(t *testing.T) {
 	required := []string{
 		"consume.lua",
 		"reserve.lua",
+		"increment_reservation.lua",
 		"finalize_reservation.lua",
 		"release_reservation.lua",
+		"expire_reservations.lua",
 		"acquire_lease.lua",
 		"renew_lease.lua",
 		"release_lease.lua",

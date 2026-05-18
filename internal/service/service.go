@@ -108,6 +108,7 @@ func (s *QuotaService) Reserve(ctx context.Context, req *quotav1.ReserveRequest)
 		ops,
 		req.GetOptions().GetDryRun(),
 		keys.Reservation(s.prefix, reservation.GetReservationId()),
+		keys.ReservationExpiryIndex(s.prefix),
 		reservation,
 		uuid.NewString(),
 	)
@@ -138,6 +139,54 @@ func (s *QuotaService) Reserve(ctx context.Context, req *quotav1.ReserveRequest)
 	return &quotav1.ReserveResponse{Decision: decision, Reservation: reservation}, nil
 }
 
+func (s *QuotaService) IncrementReservation(ctx context.Context, req *quotav1.IncrementReservationRequest) (*quotav1.IncrementReservationResponse, error) {
+	start := time.Now()
+	if req.GetRequestId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "request_id is required")
+	}
+	if req.GetReservationId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "reservation_id is required")
+	}
+	if req.GetDeltaCost() == 0 {
+		return &quotav1.IncrementReservationResponse{
+			Decision: invalidDecision("delta_cost must be non-zero"),
+		}, nil
+	}
+	result, err := s.store.IncrementReservation(
+		ctx,
+		keys.Request(s.prefix, req.GetRequestId()),
+		keys.Reservation(s.prefix, req.GetReservationId()),
+		keys.ReservationExpiryIndex(s.prefix),
+		req.GetDeltaCost(),
+		time.Now(),
+		uuid.NewString(),
+	)
+	if err != nil {
+		s.metrics.RedisError()
+		return nil, status.Errorf(codes.Unavailable, "redis increment reservation: %v", err)
+	}
+	if result.Cached || result.Decision.Cached {
+		s.metrics.IdempotencyHit()
+	}
+	if !result.Found {
+		return nil, status.Error(codes.NotFound, "reservation not found")
+	}
+	if !result.Active {
+		return nil, status.Error(codes.FailedPrecondition, "reservation is not active")
+	}
+	decision := s.decisionFromReservationIncrement(result.Decision, result.Reservation, req.GetDeltaCost())
+	action := ""
+	if result.Reservation != nil {
+		action = result.Reservation.GetAction()
+	}
+	s.recordMetrics("IncrementReservation", action, decision, start)
+	return &quotav1.IncrementReservationResponse{
+		Decision:     decision,
+		ReservedCost: result.ReservedCost,
+		Reservation:  result.Reservation,
+	}, nil
+}
+
 func (s *QuotaService) FinalizeReservation(ctx context.Context, req *quotav1.FinalizeReservationRequest) (*quotav1.FinalizeReservationResponse, error) {
 	if req.GetRequestId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "request_id is required")
@@ -148,7 +197,7 @@ func (s *QuotaService) FinalizeReservation(ctx context.Context, req *quotav1.Fin
 	if req.GetActualCost() < 0 {
 		return nil, status.Error(codes.InvalidArgument, "actual_cost cannot be negative")
 	}
-	result, err := s.store.FinalizeReservation(ctx, keys.Request(s.prefix, req.GetRequestId()), keys.Reservation(s.prefix, req.GetReservationId()), req.GetActualCost(), time.Now())
+	result, err := s.store.FinalizeReservation(ctx, keys.Request(s.prefix, req.GetRequestId()), keys.Reservation(s.prefix, req.GetReservationId()), keys.ReservationExpiryIndex(s.prefix), req.GetActualCost(), time.Now())
 	if err != nil {
 		s.metrics.RedisError()
 		return nil, status.Errorf(codes.Unavailable, "redis finalize reservation: %v", err)
@@ -182,7 +231,7 @@ func (s *QuotaService) ReleaseReservation(ctx context.Context, req *quotav1.Rele
 	if req.GetReservationId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "reservation_id is required")
 	}
-	result, err := s.store.ReleaseReservation(ctx, keys.Request(s.prefix, req.GetRequestId()), keys.Reservation(s.prefix, req.GetReservationId()), time.Now())
+	result, err := s.store.ReleaseReservation(ctx, keys.Request(s.prefix, req.GetRequestId()), keys.Reservation(s.prefix, req.GetReservationId()), keys.ReservationExpiryIndex(s.prefix), time.Now())
 	if err != nil {
 		s.metrics.RedisError()
 		return nil, status.Errorf(codes.Unavailable, "redis release reservation: %v", err)
@@ -412,17 +461,37 @@ func (s *QuotaService) GetRedisStatus(ctx context.Context, _ *quotav1.GetRedisSt
 	return &quotav1.RedisStatus{Reachable: true, Mode: s.cfg.RedisMode, LatencyMs: time.Since(start).Milliseconds(), Message: "ok"}, nil
 }
 
+func (s *QuotaService) ExpireReservations(ctx context.Context, batchSize int64) (int64, error) {
+	if batchSize <= 0 {
+		batchSize = 100
+	}
+	result, err := s.store.ExpireReservations(ctx, keys.ReservationExpiryIndex(s.prefix), time.Now(), batchSize)
+	if err != nil {
+		s.metrics.RedisError()
+		return 0, err
+	}
+	if result.Expired > 0 {
+		s.metrics.ReservationsExpired(float64(result.Expired))
+	}
+	return result.Expired, nil
+}
+
 func (s *QuotaService) newReservation(req *quotav1.ReserveRequest, ops []redisstore.LimitOp, now time.Time) *quotav1.Reservation {
 	impacts := make([]*quotav1.ReservationImpact, 0, len(req.GetLimits()))
 	for i, limit := range req.GetLimits() {
 		impacts = append(impacts, &quotav1.ReservationImpact{
-			LimitId:      limit.GetLimitId(),
-			ScopeKey:     limit.GetScopeKey(),
-			RedisKey:     ops[i].WriteKey,
-			Algorithm:    limit.GetAlgorithm(),
-			ReservedCost: req.GetReserveCost(),
-			Refundable:   limit.GetRefundable(),
-			ExpiryPolicy: limit.GetReservationExpiryPolicy(),
+			LimitId:          limit.GetLimitId(),
+			ScopeKey:         limit.GetScopeKey(),
+			RedisKey:         ops[i].WriteKey,
+			Algorithm:        limit.GetAlgorithm(),
+			ReservedCost:     req.GetReserveCost(),
+			Refundable:       limit.GetRefundable(),
+			ExpiryPolicy:     limit.GetReservationExpiryPolicy(),
+			Limit:            limit.GetLimit(),
+			Burst:            limit.GetBurst(),
+			RefillRatePerSec: limit.GetRefillRatePerSec(),
+			ResetAtUnixMs:    ops[i].ResetAtUnixMs,
+			Unit:             limit.GetUnit(),
 		})
 	}
 	return &quotav1.Reservation{
@@ -671,6 +740,9 @@ func (s *QuotaService) decisionFromResult(result redisstore.DecisionResult, supp
 		reason = quotav1.DecisionReason_DECISION_REASON_LIMIT_EXCEEDED
 		message = op + " denied"
 	}
+	if result.Message != "" {
+		message = result.Message
+	}
 	if dryRun && result.Allowed {
 		reason = quotav1.DecisionReason_DECISION_REASON_DRY_RUN
 		message = "dry run allowed; no counters were mutated"
@@ -706,6 +778,70 @@ func (s *QuotaService) decisionFromResult(result redisstore.DecisionResult, supp
 		}
 		statuses = append(statuses, status)
 	}
+	metadata := map[string]string{}
+	if result.Cached {
+		metadata["idempotency_hit"] = "true"
+	}
+	decisionID := result.DecisionID
+	if decisionID == "" {
+		decisionID = uuid.NewString()
+	}
+	return &quotav1.Decision{
+		Allowed:       result.Allowed,
+		DecisionId:    decisionID,
+		Reason:        reason,
+		Message:       message,
+		RetryAfterMs:  result.RetryAfterMS,
+		LimitStatuses: statuses,
+		Metadata:      metadata,
+	}
+}
+
+func (s *QuotaService) decisionFromReservationIncrement(result redisstore.DecisionResult, reservation *quotav1.Reservation, cost int64) *quotav1.Decision {
+	reason := quotav1.DecisionReason_DECISION_REASON_ALLOWED
+	message := "reservation incremented"
+	if result.Message != "" {
+		message = result.Message
+	}
+	if !result.Allowed {
+		reason = quotav1.DecisionReason_DECISION_REASON_LIMIT_EXCEEDED
+		if len(result.Statuses) == 0 {
+			reason = quotav1.DecisionReason_DECISION_REASON_INVALID_REQUEST
+		}
+		if message == "" {
+			message = "increment reservation denied"
+		}
+	}
+
+	statuses := make([]*quotav1.LimitStatus, 0, len(result.Statuses))
+	for i, scriptStatus := range result.Statuses {
+		status := &quotav1.LimitStatus{
+			LimitId:      scriptStatus.LimitID,
+			Used:         scriptStatus.Used,
+			Remaining:    scriptStatus.Remaining,
+			RetryAfterMs: scriptStatus.RetryAfterMS,
+			Allowed:      scriptStatus.Allowed,
+			Message:      scriptStatus.Message,
+			Cost:         cost,
+		}
+		if reservation != nil {
+			status.Action = reservation.GetAction()
+			if i < len(reservation.GetImpacts()) {
+				impact := reservation.GetImpacts()[i]
+				status.LimitId = impact.GetLimitId()
+				status.ScopeKey = impact.GetScopeKey()
+				status.Unit = impact.GetUnit()
+				status.Algorithm = impact.GetAlgorithm()
+				status.Limit = impact.GetLimit()
+				status.ResetAtUnixMs = impact.GetResetAtUnixMs()
+			}
+		}
+		if !status.GetAllowed() {
+			s.metrics.Denial(status.GetAction(), s.cfg.Product, status.GetLimitId())
+		}
+		statuses = append(statuses, status)
+	}
+
 	metadata := map[string]string{}
 	if result.Cached {
 		metadata["idempotency_hit"] = "true"

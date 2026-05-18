@@ -14,6 +14,7 @@ func TestHandlerExposesDocumentedMetrics(t *testing.T) {
 	m.RedisError()
 	m.IdempotencyHit()
 	m.ReservationInc()
+	m.ReservationsExpired(2)
 	m.LeaseInc()
 	m.Overage()
 
@@ -29,6 +30,7 @@ func TestHandlerExposesDocumentedMetrics(t *testing.T) {
 		`quota_redis_errors_total 1`,
 		`quota_idempotency_hits_total 1`,
 		`quota_reservations_active 1`,
+		`quota_reservations_expired_total 2`,
 		`quota_leases_active 1`,
 		`quota_overages_total 1`,
 	} {

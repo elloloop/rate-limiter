@@ -33,6 +33,10 @@ func Reservation(prefix, reservationID string) string {
 	return prefix + "res:" + reservationID
 }
 
+func ReservationExpiryIndex(prefix string) string {
+	return prefix + "res_expiry"
+}
+
 func Lease(prefix, leaseID string) string {
 	return prefix + "lease:" + leaseID
 }

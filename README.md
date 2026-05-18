@@ -17,7 +17,8 @@ Quota math inside.
 ## What It Does
 
 - Enforces known-cost consumption with idempotent `Consume` calls.
-- Reserves estimated usage and finalizes or releases reservations without
+- Reserves estimated usage, increments or shrinks active reservations for
+  streaming workloads, and finalizes or releases reservations without
   recomputing window keys.
 - Manages concurrency through Redis-backed leases.
 - Supports fixed calendar windows, fixed duration windows, sliding windows,

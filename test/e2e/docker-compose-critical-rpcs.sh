@@ -193,6 +193,31 @@ require_contains "$get_reservation_json" "\"reservationId\": \"$reservation_id\"
 require_contains "$get_reservation_json" '"status": "RESERVATION_STATUS_ACTIVE"' "GetReservation active response"
 require_contains "$get_reservation_json" '"redisKey": "' "GetReservation active response"
 
+increment_grow_json="$(grpc IncrementReservation "{
+  \"requestId\": \"req-e2e-increment-grow\",
+  \"reservationId\": \"$reservation_id\",
+  \"deltaCost\": \"30\"
+}")"
+require_contains "$increment_grow_json" '"allowed": true' "IncrementReservation grow response"
+require_contains "$increment_grow_json" '"reservedCost": "70"' "IncrementReservation grow response"
+
+increment_deny_json="$(grpc IncrementReservation "{
+  \"requestId\": \"req-e2e-increment-denied\",
+  \"reservationId\": \"$reservation_id\",
+  \"deltaCost\": \"40\"
+}")"
+require_not_contains "$increment_deny_json" '"allowed": true' "IncrementReservation denial response"
+require_contains "$increment_deny_json" '"reason": "DECISION_REASON_LIMIT_EXCEEDED"' "IncrementReservation denial response"
+require_contains "$increment_deny_json" '"reservedCost": "70"' "IncrementReservation denial response"
+
+increment_shrink_json="$(grpc IncrementReservation "{
+  \"requestId\": \"req-e2e-increment-shrink\",
+  \"reservationId\": \"$reservation_id\",
+  \"deltaCost\": \"-30\"
+}")"
+require_contains "$increment_shrink_json" '"allowed": true' "IncrementReservation shrink response"
+require_contains "$increment_shrink_json" '"reservedCost": "40"' "IncrementReservation shrink response"
+
 finalize_json="$(grpc FinalizeReservation "{
   \"requestId\": \"req-e2e-finalize\",
   \"reservationId\": \"$reservation_id\",

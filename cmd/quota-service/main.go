@@ -104,6 +104,7 @@ func serve() error {
 	server := grpc.NewServer(opts...)
 	quota := service.New(cfg, store, eventSink, m, logger)
 	quotav1.RegisterQuotaServiceServer(server, quota)
+	go runReservationExpirySweeper(ctx, quota, logger, time.Second, 100)
 
 	healthServer := health.NewServer()
 	healthgrpc.RegisterHealthServer(server, healthServer)
@@ -135,6 +136,27 @@ func serve() error {
 		return err
 	}
 	return nil
+}
+
+func runReservationExpirySweeper(ctx context.Context, quota *service.QuotaService, logger *slog.Logger, interval time.Duration, batchSize int64) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		expired, err := quota.ExpireReservations(ctx, batchSize)
+		if err != nil && ctx.Err() == nil {
+			logger.Warn("reservation expiry sweep failed", "error", err)
+		}
+		if expired > 0 {
+			logger.Info("expired reservations swept", "expired", expired)
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func runHealthProbe(ctx context.Context, healthServer *health.Server, quota *service.QuotaService, logger *slog.Logger, interval time.Duration) {
