@@ -107,15 +107,15 @@ docker run --rm -p 16379:6379 redis:7.4-alpine
 QUOTA_TEST_REDIS_URL=redis://localhost:16379/0 go test -race -count=1 ./...
 ```
 
-Run the Docker Compose e2e smoke test:
+Run the Docker Compose critical RPC e2e test:
 
 ```bash
-test/e2e/docker-compose-smoke.sh
+test/e2e/docker-compose-critical-rpcs.sh
 ```
 
 CI runs protobuf checks, unit tests, race-enabled Redis integration tests, docs
-builds, Docker builds, a Docker Compose e2e smoke test, and Trivy high/critical
-vulnerability scanning.
+builds, Docker builds, a Docker Compose critical RPC e2e test, and Trivy
+high/critical vulnerability scanning.
 
 ## Releases
 

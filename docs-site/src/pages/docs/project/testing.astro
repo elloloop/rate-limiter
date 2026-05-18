@@ -28,18 +28,26 @@ QUOTA_TEST_REDIS_URL=redis://localhost:16379/0 go test -race -count=1 ./...`} la
   </p>
 
   <h2>Docker Compose E2E</h2>
-  <Code code={`test/e2e/docker-compose-smoke.sh`} lang="bash" />
+  <Code code={`test/e2e/docker-compose-critical-rpcs.sh`} lang="bash" />
   <p>
-    The e2e smoke test builds the Docker image, starts Redis and the service,
-    calls gRPC with <code>grpcurl</code>, verifies idempotency and denial
-    behavior, and checks Prometheus metrics.
+    The e2e test builds the Docker image, starts Redis and the service, and
+    exercises the critical public gRPC surface with <code>grpcurl</code> using
+    dummy workspace and assistant data. It covers
+    <code>GetRedisStatus</code>, <code>ValidateLimits</code>,
+    <code>Consume</code>, <code>GetCurrentUsage</code>,
+    <code>Explain</code>, <code>Reserve</code>,
+    <code>GetReservation</code>, <code>FinalizeReservation</code>,
+    <code>ReleaseReservation</code>, <code>AcquireLease</code>,
+    <code>GetLease</code>, <code>RenewLease</code>, and
+    <code>ReleaseLease</code>, plus idempotency, denial behavior, and
+    Prometheus metrics.
   </p>
 
   <h2>Release Gates</h2>
   <p>
-    Release tags run Redis integration tests and Docker Compose e2e before the
-    multi-arch GHCR image is pushed. The release workflow then inspects the
-    published manifest, pulls the versioned GHCR image, and runs
+    Release tags run Redis integration tests and Docker Compose critical RPC
+    e2e before the multi-arch GHCR image is pushed. The release workflow then
+    inspects the published manifest, pulls the versioned GHCR image, and runs
     <code>quota-service version</code> from that pulled image before creating
     the GitHub Release.
   </p>

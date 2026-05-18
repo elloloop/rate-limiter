@@ -34,6 +34,6 @@ Release tags publish:
 - release-time docs build verification
 
 The release workflow will not publish the image until Redis-backed Go tests and
-the Docker Compose e2e smoke test pass.
+the Docker Compose critical RPC e2e test pass.
 
 GitHub Pages deploys from `main` through the docs workflow.

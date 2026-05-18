@@ -69,8 +69,8 @@ jobs:
         run: |
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
           go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest
-      - name: Run Docker Compose e2e smoke
-        run: test/e2e/docker-compose-smoke.sh
+      - name: Run Docker Compose critical RPC e2e
+        run: test/e2e/docker-compose-critical-rpcs.sh
 
   build-and-push:
     name: Build and Push Image
