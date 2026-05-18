@@ -75,6 +75,9 @@ if ! grep -q '"reachable": true' <<<"$status_json"; then
   exit 1
 fi
 
+health_json="$(grpcurl -plaintext -d '{"service":"quota.v1.QuotaService"}' "localhost:$GRPC_PORT" grpc.health.v1.Health/Check)"
+require_contains "$health_json" '"status": "SERVING"' "gRPC health response"
+
 email_limit='{
   "limitId": "user_email_recipients_daily",
   "scopeKey": "user:user_123",

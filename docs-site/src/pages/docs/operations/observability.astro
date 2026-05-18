@@ -7,7 +7,13 @@ import { Code } from "astro-expressive-code/components";
   <h1>Observability</h1>
 
   <h2>Health</h2>
-  <p>The service implements standard gRPC health checking.</p>
+  <p>
+    The service implements standard gRPC health checking. Health status is
+    refreshed while the process is running and reports <code>NOT_SERVING</code>
+    if Redis becomes unreachable or required Lua scripts cannot be loaded.
+    Missing Redis scripts are reloaded automatically after Redis restart,
+    failover, or <code>SCRIPT FLUSH</code>.
+  </p>
   <Code code={`grpc.health.v1.Health`} lang="text" />
 
   <h2>Reflection</h2>
@@ -25,5 +31,11 @@ quota_reservations_expired_total
 quota_leases_active
 quota_overages_total
 quota_event_emit_errors_total`} lang="text" />
-</DocsLayout>
 
+  <h2>Events</h2>
+  <p>
+    Event emission is best-effort and append-only. Postgres event writes use
+    their own short timeout instead of inheriting the caller RPC context, so a
+    completed request does not cancel asynchronous event delivery.
+  </p>
+</DocsLayout>

@@ -107,8 +107,8 @@ func serve() error {
 
 	healthServer := health.NewServer()
 	healthgrpc.RegisterHealthServer(server, healthServer)
-	healthServer.SetServingStatus("", healthgrpc.HealthCheckResponse_SERVING)
-	healthServer.SetServingStatus("quota.v1.QuotaService", healthgrpc.HealthCheckResponse_SERVING)
+	updateHealthStatus(ctx, healthServer, quota, logger)
+	go runHealthProbe(ctx, healthServer, quota, logger, 5*time.Second)
 	reflection.Register(server)
 
 	lis, err := net.Listen("tcp", cfg.GRPCBindAddr)
@@ -137,9 +137,43 @@ func serve() error {
 	return nil
 }
 
+func runHealthProbe(ctx context.Context, healthServer *health.Server, quota *service.QuotaService, logger *slog.Logger, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			healthServer.SetServingStatus("", healthgrpc.HealthCheckResponse_NOT_SERVING)
+			healthServer.SetServingStatus("quota.v1.QuotaService", healthgrpc.HealthCheckResponse_NOT_SERVING)
+			return
+		case <-ticker.C:
+			updateHealthStatus(ctx, healthServer, quota, logger)
+		}
+	}
+}
+
+func updateHealthStatus(ctx context.Context, healthServer *health.Server, quota *service.QuotaService, logger *slog.Logger) {
+	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	status := healthgrpc.HealthCheckResponse_SERVING
+	redisStatus, err := quota.GetRedisStatus(probeCtx, &quotav1.GetRedisStatusRequest{})
+	if err != nil || !redisStatus.GetReachable() || redisStatus.GetMessage() != "ok" {
+		status = healthgrpc.HealthCheckResponse_NOT_SERVING
+		if err != nil {
+			logger.Warn("health probe failed", "error", err)
+		} else {
+			logger.Warn("health probe not serving", "message", redisStatus.GetMessage())
+		}
+	}
+
+	healthServer.SetServingStatus("", status)
+	healthServer.SetServingStatus("quota.v1.QuotaService", status)
+}
+
 func printConfig() error {
 	cfg := config.Load()
-	encoded, err := json.MarshalIndent(cfg, "", "  ")
+	encoded, err := json.MarshalIndent(cfg.Redacted(), "", "  ")
 	if err != nil {
 		return err
 	}

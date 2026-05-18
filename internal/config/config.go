@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -65,6 +66,36 @@ func (c Config) Validate() error {
 		return fmt.Errorf("QUOTA_MTLS_CLIENT_CA_FILE is required when QUOTA_MTLS_ENABLED=true")
 	}
 	return nil
+}
+
+func (c Config) Redacted() Config {
+	c.RedisURL = redactURL(c.RedisURL)
+	c.EventDatabaseURL = redactURL(c.EventDatabaseURL)
+	return c
+}
+
+func redactURL(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return "[redacted]"
+	}
+	if parsed.User != nil {
+		username := parsed.User.Username()
+		if _, hasPassword := parsed.User.Password(); hasPassword {
+			parsed.User = url.UserPassword(username, "xxxxx")
+		}
+	}
+	query := parsed.Query()
+	for _, key := range []string{"password", "pass", "token", "apikey", "api_key"} {
+		if query.Has(key) {
+			query.Set(key, "xxxxx")
+		}
+	}
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
 }
 
 func env(key, fallback string) string {

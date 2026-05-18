@@ -14,6 +14,11 @@ Readiness verifies:
 - Required Lua scripts are loaded.
 - The configured event sink initializes.
 
+The gRPC health status is refreshed continuously while the service is running.
+If Redis becomes unreachable or required scripts cannot be loaded, the health
+service reports `NOT_SERVING`. If Redis drops cached Lua scripts during a
+restart, failover, or `SCRIPT FLUSH`, the service reloads them automatically.
+
 ## Reflection
 
 The service enables gRPC reflection:
@@ -52,4 +57,6 @@ V1 sinks:
 - `postgres`
 
 Event emission must not block the hot path in default mode.
-
+Postgres event writes run with their own short timeout instead of inheriting the
+caller RPC context, so a completed request does not cancel best-effort event
+delivery.

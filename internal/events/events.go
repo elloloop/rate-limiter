@@ -107,7 +107,9 @@ func (s *postgresSink) Emit(ctx context.Context, event Event) {
 		return
 	}
 	go func() {
-		insertCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		// Event delivery is best-effort and must not inherit an RPC context that
+		// may be canceled as soon as the hot-path handler returns.
+		insertCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_, err := s.db.ExecContext(insertCtx, `
 INSERT INTO quota_usage_events (event_type, event_time, product, environment, action, request_id, payload)

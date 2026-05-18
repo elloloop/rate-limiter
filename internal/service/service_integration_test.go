@@ -5,8 +5,10 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/http/httptest"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -144,6 +146,37 @@ func TestConsumeConcurrentContentionUsesRedisAtomicity(t *testing.T) {
 		t.Fatalf("denied requests = %d, want %d", denied, attempts-allowedLimit)
 	}
 	assertUsed(t, ctx, svc, limit, allowedLimit)
+}
+
+func TestRedisScriptsReloadAfterScriptFlushWithRedis(t *testing.T) {
+	ctx, svc, store := newRedisBackedService(t)
+
+	if err := store.Client().ScriptFlush(ctx).Err(); err != nil {
+		t.Fatalf("script flush: %v", err)
+	}
+
+	limit := fixedDurationLimit("script_reload", 5)
+	resp, err := svc.Consume(ctx, &quotav1.ConsumeRequest{
+		RequestId: "req-script-reload",
+		Context:   &quotav1.RequestContext{Product: "workspace", Environment: "test"},
+		Action:    limit.GetAction(),
+		Cost:      1,
+		Limits:    []*quotav1.Limit{limit},
+	})
+	if err != nil {
+		t.Fatalf("consume after script flush should reload scripts: %v", err)
+	}
+	if !resp.GetDecision().GetAllowed() {
+		t.Fatalf("expected consume after script reload to allow: %v", resp.GetDecision())
+	}
+
+	status, err := svc.GetRedisStatus(ctx, &quotav1.GetRedisStatusRequest{})
+	if err != nil {
+		t.Fatalf("redis status after script reload: %v", err)
+	}
+	if !status.GetReachable() || status.GetMessage() != "ok" {
+		t.Fatalf("unexpected redis status after script reload: %v", status)
+	}
 }
 
 func TestConsumeSupportsWindowAndBucketAlgorithmsWithRedis(t *testing.T) {
@@ -346,6 +379,86 @@ func TestReservationFinalizeAndReleaseLifecycleWithRedis(t *testing.T) {
 		t.Fatalf("unexpected release response: %v", released)
 	}
 	assertUsed(t, ctx, svc, limit, 50)
+}
+
+func TestLifecycleIdempotentReplaysDoNotDoubleCountActiveMetricsWithRedis(t *testing.T) {
+	ctx, svc, _ := newRedisBackedService(t)
+
+	limit := fixedDayLimitWithLimit(100)
+	limit.Refundable = true
+	limit.ReservationExpiryPolicy = quotav1.ReservationExpiryPolicy_RESERVATION_EXPIRY_POLICY_CHARGE_FULL
+
+	releasedReserve, err := svc.Reserve(ctx, &quotav1.ReserveRequest{
+		RequestId:        "req-metrics-release-reserve",
+		Context:          &quotav1.RequestContext{Product: "workspace", Environment: "test"},
+		Action:           limit.GetAction(),
+		ReserveCost:      20,
+		ReservationTtlMs: 60000,
+		Limits:           []*quotav1.Limit{limit},
+	})
+	if err != nil {
+		t.Fatalf("reserve for release metrics: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		released, err := svc.ReleaseReservation(ctx, &quotav1.ReleaseReservationRequest{
+			RequestId:     "req-metrics-release",
+			ReservationId: releasedReserve.GetReservation().GetReservationId(),
+			Reason:        "idempotent replay",
+		})
+		if err != nil {
+			t.Fatalf("release replay %d: %v", i, err)
+		}
+		if !released.GetReleased() {
+			t.Fatalf("release replay %d should return released=true: %v", i, released)
+		}
+	}
+
+	finalizedReserve, err := svc.Reserve(ctx, &quotav1.ReserveRequest{
+		RequestId:        "req-metrics-finalize-reserve",
+		Context:          &quotav1.RequestContext{Product: "workspace", Environment: "test"},
+		Action:           limit.GetAction(),
+		ReserveCost:      30,
+		ReservationTtlMs: 60000,
+		Limits:           []*quotav1.Limit{limit},
+	})
+	if err != nil {
+		t.Fatalf("reserve for finalize metrics: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		finalized, err := svc.FinalizeReservation(ctx, &quotav1.FinalizeReservationRequest{
+			RequestId:     "req-metrics-finalize",
+			ReservationId: finalizedReserve.GetReservation().GetReservationId(),
+			ActualCost:    40,
+			Status:        quotav1.FinalizeStatus_FINALIZE_STATUS_SUCCEEDED,
+		})
+		if err != nil {
+			t.Fatalf("finalize replay %d: %v", i, err)
+		}
+		if !finalized.GetFinalized() || finalized.GetOverageCost() != 10 {
+			t.Fatalf("unexpected finalize replay %d response: %v", i, finalized)
+		}
+	}
+
+	leaseLimit := concurrencyLimit(1)
+	lease := acquireLease(t, ctx, svc, "req-metrics-lease", leaseLimit)
+	for i := 0; i < 2; i++ {
+		released, err := svc.ReleaseLease(ctx, &quotav1.ReleaseLeaseRequest{
+			RequestId: "req-metrics-release-lease",
+			LeaseId:   lease.GetLease().GetLeaseId(),
+		})
+		if err != nil {
+			t.Fatalf("release lease replay %d: %v", i, err)
+		}
+		if !released.GetReleased() {
+			t.Fatalf("release lease replay %d should return released=true: %v", i, released)
+		}
+	}
+
+	body := serviceMetrics(t, svc)
+	requireMetric(t, body, "quota_reservations_active 0")
+	requireMetric(t, body, "quota_leases_active 0")
+	requireMetric(t, body, "quota_overages_total 1")
+	requireMetric(t, body, "quota_idempotency_hits_total 3")
 }
 
 func TestReservationOverageDoesNotMutateOriginalWindowWithRedis(t *testing.T) {
@@ -715,6 +828,21 @@ func assertUsed(t *testing.T, ctx context.Context, svc *QuotaService, limit *quo
 	}
 	if got := usage.GetLimitStatuses()[0].GetUsed(); got != want {
 		t.Fatalf("current usage = %d, want %d", got, want)
+	}
+}
+
+func serviceMetrics(t *testing.T, svc *QuotaService) string {
+	t.Helper()
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	rec := httptest.NewRecorder()
+	svc.metrics.Handler().ServeHTTP(rec, req)
+	return rec.Body.String()
+}
+
+func requireMetric(t *testing.T, body, want string) {
+	t.Helper()
+	if !strings.Contains(body, want) {
+		t.Fatalf("metrics output missing %q\n%s", want, body)
 	}
 }
 

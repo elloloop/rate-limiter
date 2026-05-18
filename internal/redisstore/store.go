@@ -5,6 +5,8 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -30,8 +32,10 @@ const (
 )
 
 type Store struct {
-	client  *redis.Client
-	scripts map[string]string
+	client       *redis.Client
+	mu           sync.RWMutex
+	scripts      map[string]string
+	scriptBodies map[string]string
 }
 
 type LimitOp struct {
@@ -68,6 +72,7 @@ type DecisionResult struct {
 }
 
 type FinalizeResult struct {
+	Cached       bool                 `json:"cached"`
 	Found        bool                 `json:"found"`
 	Finalized    bool                 `json:"finalized"`
 	ReservedCost int64                `json:"reserved_cost"`
@@ -79,6 +84,7 @@ type FinalizeResult struct {
 }
 
 type ReleaseReservationResult struct {
+	Cached       bool                 `json:"cached"`
 	Found        bool                 `json:"found"`
 	Released     bool                 `json:"released"`
 	ReleasedCost int64                `json:"released_cost"`
@@ -87,6 +93,7 @@ type ReleaseReservationResult struct {
 }
 
 type LeaseResult struct {
+	Cached   bool           `json:"cached"`
 	Found    bool           `json:"found"`
 	Renewed  bool           `json:"renewed"`
 	Released bool           `json:"released"`
@@ -100,7 +107,7 @@ func New(ctx context.Context, redisURL string) (*Store, error) {
 		return nil, err
 	}
 	client := redis.NewClient(opts)
-	store := &Store{client: client, scripts: map[string]string{}}
+	store := &Store{client: client, scripts: map[string]string{}, scriptBodies: map[string]string{}}
 	if err := store.LoadScripts(ctx); err != nil {
 		_ = client.Close()
 		return nil, err
@@ -134,12 +141,17 @@ func (s *Store) LoadScripts(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("load %s.lua: %w", name, err)
 		}
+		s.mu.Lock()
 		s.scripts[name] = sha
+		s.scriptBodies[name] = string(body)
+		s.mu.Unlock()
 	}
 	return nil
 }
 
 func (s *Store) ScriptSHAs() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	shas := make([]string, 0, len(s.scripts))
 	for _, sha := range s.scripts {
 		shas = append(shas, sha)
@@ -152,14 +164,14 @@ func (s *Store) Consume(ctx context.Context, idemKey string, now time.Time, ops 
 	if err != nil {
 		return DecisionResult{}, err
 	}
-	raw, err := s.client.EvalSha(ctx, s.scripts[scriptConsume], nil,
+	raw, err := s.evalText(ctx, scriptConsume, nil,
 		idemKey,
 		millis(defaultIdempotencyTTL),
 		now.UnixMilli(),
 		boolArg(dryRun),
 		string(args),
 		decisionID,
-	).Text()
+	)
 	if err != nil {
 		return DecisionResult{}, err
 	}
@@ -179,7 +191,7 @@ func (s *Store) Reserve(ctx context.Context, idemKey string, now time.Time, ops 
 	if ttl < defaultReservationExtraTTL {
 		ttl = defaultReservationExtraTTL
 	}
-	raw, err := s.client.EvalSha(ctx, s.scripts[scriptReserve], nil,
+	raw, err := s.evalText(ctx, scriptReserve, nil,
 		idemKey,
 		millis(ttl),
 		now.UnixMilli(),
@@ -189,7 +201,7 @@ func (s *Store) Reserve(ctx context.Context, idemKey string, now time.Time, ops 
 		string(reservationJSON),
 		millis(ttl),
 		decisionID,
-	).Text()
+	)
 	if err != nil {
 		return DecisionResult{}, err
 	}
@@ -197,17 +209,18 @@ func (s *Store) Reserve(ctx context.Context, idemKey string, now time.Time, ops 
 }
 
 func (s *Store) FinalizeReservation(ctx context.Context, idemKey, reservationKey string, actualCost int64, now time.Time) (FinalizeResult, error) {
-	raw, err := s.client.EvalSha(ctx, s.scripts[scriptFinalizeReservation], nil,
+	raw, err := s.evalText(ctx, scriptFinalizeReservation, nil,
 		idemKey,
 		millis(defaultIdempotencyTTL),
 		reservationKey,
 		actualCost,
 		now.UnixMilli(),
-	).Text()
+	)
 	if err != nil {
 		return FinalizeResult{}, err
 	}
 	var envelope struct {
+		Cached       bool            `json:"cached"`
 		Found        bool            `json:"found"`
 		Finalized    bool            `json:"finalized"`
 		ReservedCost int64           `json:"reserved_cost"`
@@ -220,6 +233,7 @@ func (s *Store) FinalizeReservation(ctx context.Context, idemKey, reservationKey
 		return FinalizeResult{}, err
 	}
 	result := FinalizeResult{
+		Cached:       envelope.Cached,
 		Found:        envelope.Found,
 		Finalized:    envelope.Finalized,
 		ReservedCost: envelope.ReservedCost,
@@ -238,16 +252,17 @@ func (s *Store) FinalizeReservation(ctx context.Context, idemKey, reservationKey
 }
 
 func (s *Store) ReleaseReservation(ctx context.Context, idemKey, reservationKey string, now time.Time) (ReleaseReservationResult, error) {
-	raw, err := s.client.EvalSha(ctx, s.scripts[scriptReleaseReservation], nil,
+	raw, err := s.evalText(ctx, scriptReleaseReservation, nil,
 		idemKey,
 		millis(defaultIdempotencyTTL),
 		reservationKey,
 		now.UnixMilli(),
-	).Text()
+	)
 	if err != nil {
 		return ReleaseReservationResult{}, err
 	}
 	var envelope struct {
+		Cached       bool            `json:"cached"`
 		Found        bool            `json:"found"`
 		Released     bool            `json:"released"`
 		ReleasedCost int64           `json:"released_cost"`
@@ -257,6 +272,7 @@ func (s *Store) ReleaseReservation(ctx context.Context, idemKey, reservationKey 
 		return ReleaseReservationResult{}, err
 	}
 	result := ReleaseReservationResult{
+		Cached:       envelope.Cached,
 		Found:        envelope.Found,
 		Released:     envelope.Released,
 		ReleasedCost: envelope.ReleasedCost,
@@ -280,7 +296,7 @@ func (s *Store) AcquireLease(ctx context.Context, idemKey, leaseKey string, leas
 	if err != nil {
 		return DecisionResult{}, err
 	}
-	raw, err := s.client.EvalSha(ctx, s.scripts[scriptAcquireLease], nil,
+	raw, err := s.evalText(ctx, scriptAcquireLease, nil,
 		idemKey,
 		millis(leaseTTL+defaultLeaseExtraTTL),
 		leaseKey,
@@ -292,7 +308,7 @@ func (s *Store) AcquireLease(ctx context.Context, idemKey, leaseKey string, leas
 		boolArg(dryRun),
 		string(args),
 		decisionID,
-	).Text()
+	)
 	if err != nil {
 		return DecisionResult{}, err
 	}
@@ -300,14 +316,14 @@ func (s *Store) AcquireLease(ctx context.Context, idemKey, leaseKey string, leas
 }
 
 func (s *Store) RenewLease(ctx context.Context, idemKey, leaseKey, leaseID string, extendTTL time.Duration, now time.Time) (LeaseResult, error) {
-	raw, err := s.client.EvalSha(ctx, s.scripts[scriptRenewLease], nil,
+	raw, err := s.evalText(ctx, scriptRenewLease, nil,
 		idemKey,
 		millis(defaultIdempotencyTTL),
 		leaseKey,
 		leaseID,
 		millis(extendTTL),
 		now.UnixMilli(),
-	).Text()
+	)
 	if err != nil {
 		return LeaseResult{}, err
 	}
@@ -315,12 +331,12 @@ func (s *Store) RenewLease(ctx context.Context, idemKey, leaseKey, leaseID strin
 }
 
 func (s *Store) ReleaseLease(ctx context.Context, idemKey, leaseKey, leaseID string) (LeaseResult, error) {
-	raw, err := s.client.EvalSha(ctx, s.scripts[scriptReleaseLease], nil,
+	raw, err := s.evalText(ctx, scriptReleaseLease, nil,
 		idemKey,
 		millis(defaultIdempotencyTTL),
 		leaseKey,
 		leaseID,
-	).Text()
+	)
 	if err != nil {
 		return LeaseResult{}, err
 	}
@@ -361,6 +377,7 @@ func parseDecision(raw string) (DecisionResult, error) {
 
 func parseLeaseResult(raw string) (LeaseResult, error) {
 	var envelope struct {
+		Cached   bool            `json:"cached"`
 		Found    bool            `json:"found"`
 		Renewed  bool            `json:"renewed"`
 		Released bool            `json:"released"`
@@ -370,6 +387,7 @@ func parseLeaseResult(raw string) (LeaseResult, error) {
 		return LeaseResult{}, err
 	}
 	result := LeaseResult{
+		Cached:   envelope.Cached,
 		Found:    envelope.Found,
 		Renewed:  envelope.Renewed,
 		Released: envelope.Released,
@@ -382,6 +400,35 @@ func parseLeaseResult(raw string) (LeaseResult, error) {
 		}
 	}
 	return result, nil
+}
+
+func (s *Store) evalText(ctx context.Context, scriptName string, keys []string, args ...any) (string, error) {
+	s.mu.RLock()
+	sha := s.scripts[scriptName]
+	s.mu.RUnlock()
+
+	raw, err := s.client.EvalSha(ctx, sha, keys, args...).Text()
+	if err == nil || !isNoScript(err) {
+		return raw, err
+	}
+
+	s.mu.Lock()
+	body := s.scriptBodies[scriptName]
+	loadedSHA, loadErr := s.client.ScriptLoad(ctx, body).Result()
+	if loadErr == nil {
+		s.scripts[scriptName] = loadedSHA
+		sha = loadedSHA
+	}
+	s.mu.Unlock()
+	if loadErr != nil {
+		return "", fmt.Errorf("reload %s.lua after NOSCRIPT: %w", scriptName, loadErr)
+	}
+
+	return s.client.EvalSha(ctx, sha, keys, args...).Text()
+}
+
+func isNoScript(err error) bool {
+	return strings.Contains(strings.ToUpper(err.Error()), "NOSCRIPT")
 }
 
 func boolArg(v bool) string {

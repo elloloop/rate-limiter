@@ -124,7 +124,7 @@ func (s *QuotaService) Reserve(ctx context.Context, req *quotav1.ReserveRequest)
 	decision := s.decisionFromResult(result, req.GetLimits(), req.GetReserveCost(), req.GetOptions().GetDryRun(), "reserve")
 	if !decision.GetAllowed() || req.GetOptions().GetDryRun() {
 		reservation = nil
-	} else {
+	} else if !result.Cached {
 		s.metrics.ReservationInc()
 	}
 	s.recordMetrics("Reserve", req.GetAction(), decision, start)
@@ -153,13 +153,16 @@ func (s *QuotaService) FinalizeReservation(ctx context.Context, req *quotav1.Fin
 		s.metrics.RedisError()
 		return nil, status.Errorf(codes.Unavailable, "redis finalize reservation: %v", err)
 	}
+	if result.Cached {
+		s.metrics.IdempotencyHit()
+	}
 	if !result.Found {
 		return nil, status.Error(codes.NotFound, "reservation not found")
 	}
-	if result.Finalized {
+	if result.Finalized && !result.Cached {
 		s.metrics.ReservationDec()
 	}
-	if result.OverageCost > 0 {
+	if result.OverageCost > 0 && !result.Cached {
 		s.metrics.Overage()
 	}
 	return &quotav1.FinalizeReservationResponse{
@@ -184,10 +187,13 @@ func (s *QuotaService) ReleaseReservation(ctx context.Context, req *quotav1.Rele
 		s.metrics.RedisError()
 		return nil, status.Errorf(codes.Unavailable, "redis release reservation: %v", err)
 	}
+	if result.Cached {
+		s.metrics.IdempotencyHit()
+	}
 	if !result.Found {
 		return nil, status.Error(codes.NotFound, "reservation not found")
 	}
-	if result.Released {
+	if result.Released && !result.Cached {
 		s.metrics.ReservationDec()
 	}
 	return &quotav1.ReleaseReservationResponse{
@@ -230,7 +236,7 @@ func (s *QuotaService) AcquireLease(ctx context.Context, req *quotav1.AcquireLea
 	decision := s.decisionFromResult(result, req.GetLimits(), 1, req.GetOptions().GetDryRun(), "acquire lease")
 	if !decision.GetAllowed() || req.GetOptions().GetDryRun() {
 		lease = nil
-	} else {
+	} else if !result.Cached {
 		s.metrics.LeaseInc()
 	}
 	s.recordMetrics("AcquireLease", req.GetAction(), decision, start)
@@ -259,6 +265,9 @@ func (s *QuotaService) RenewLease(ctx context.Context, req *quotav1.RenewLeaseRe
 		s.metrics.RedisError()
 		return nil, status.Errorf(codes.Unavailable, "redis renew lease: %v", err)
 	}
+	if result.Cached {
+		s.metrics.IdempotencyHit()
+	}
 	if !result.Found {
 		return nil, status.Error(codes.NotFound, "lease not found")
 	}
@@ -277,10 +286,13 @@ func (s *QuotaService) ReleaseLease(ctx context.Context, req *quotav1.ReleaseLea
 		s.metrics.RedisError()
 		return nil, status.Errorf(codes.Unavailable, "redis release lease: %v", err)
 	}
+	if result.Cached {
+		s.metrics.IdempotencyHit()
+	}
 	if !result.Found {
 		return nil, status.Error(codes.NotFound, "lease not found")
 	}
-	if result.Released {
+	if result.Released && !result.Cached {
 		s.metrics.LeaseDec()
 	}
 	return &quotav1.ReleaseLeaseResponse{LeaseId: req.GetLeaseId(), Released: result.Released}, nil
@@ -382,7 +394,19 @@ func (s *QuotaService) GetRedisStatus(ctx context.Context, _ *quotav1.GetRedisSt
 	}
 	for _, ok := range exists {
 		if !ok {
-			return &quotav1.RedisStatus{Reachable: true, Mode: s.cfg.RedisMode, LatencyMs: time.Since(start).Milliseconds(), Message: "one or more Redis scripts are not loaded"}, nil
+			if err := s.store.LoadScripts(ctx); err != nil {
+				return &quotav1.RedisStatus{Reachable: true, Mode: s.cfg.RedisMode, LatencyMs: time.Since(start).Milliseconds(), Message: "reload Redis scripts: " + err.Error()}, nil
+			}
+			reloaded, err := s.store.Client().ScriptExists(ctx, s.store.ScriptSHAs()...).Result()
+			if err != nil {
+				return &quotav1.RedisStatus{Reachable: false, Mode: s.cfg.RedisMode, LatencyMs: time.Since(start).Milliseconds(), Message: err.Error()}, nil
+			}
+			for _, loaded := range reloaded {
+				if !loaded {
+					return &quotav1.RedisStatus{Reachable: true, Mode: s.cfg.RedisMode, LatencyMs: time.Since(start).Milliseconds(), Message: "one or more Redis scripts are not loaded"}, nil
+				}
+			}
+			break
 		}
 	}
 	return &quotav1.RedisStatus{Reachable: true, Mode: s.cfg.RedisMode, LatencyMs: time.Since(start).Milliseconds(), Message: "ok"}, nil

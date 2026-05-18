@@ -24,7 +24,8 @@ fixed calendar windows, fixed duration windows, sliding windows, token buckets,
 leaky buckets, GCRA, reservations, finalization refunds, release refunds,
 reservation overages, concurrency leases, renewals, releases, lease expiry,
 idempotency, invalid algorithm/RPC combinations, `Explain`, current usage, a
-concurrent contention stress case for Redis Lua atomicity, and a real gRPC
+concurrent contention stress case for Redis Lua atomicity, Redis script reload
+after `SCRIPT FLUSH`, lifecycle idempotency metrics, and a real gRPC
 client/server round trip.
 
 ## Docker Compose E2E
@@ -39,7 +40,8 @@ assistant product data. Coverage includes `GetRedisStatus`, `ValidateLimits`,
 `Consume`, `GetCurrentUsage`, `Explain`, `Reserve`, `GetReservation`,
 `FinalizeReservation`, `ReleaseReservation`, `AcquireLease`, `GetLease`,
 `RenewLease`, and `ReleaseLease`, plus idempotency/denial behavior and
-Prometheus metrics exposure.
+Prometheus metrics exposure. The e2e test also checks the standard gRPC health
+service reports `SERVING`.
 
 ## CI and Release Gates
 

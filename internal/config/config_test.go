@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestLoadUsesDocumentedDefaults(t *testing.T) {
 	t.Setenv("QUOTA_PRODUCT", "")
@@ -53,4 +56,30 @@ func TestValidateRequiresTLSForMTLS(t *testing.T) {
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected mTLS without TLS to fail")
 	}
+}
+
+func TestRedactedHidesURLCredentials(t *testing.T) {
+	cfg := Config{
+		RedisURL:         "redis://:redis-secret@redis.internal:6379/0?token=abc",
+		EventDatabaseURL: "postgres://quota:pg-secret@db.internal:5432/quota?sslmode=require",
+	}
+
+	redacted := cfg.Redacted()
+	for _, got := range []string{redacted.RedisURL, redacted.EventDatabaseURL} {
+		if got == "" {
+			t.Fatal("redacted URL should preserve non-empty URL")
+		}
+		if containsAny(got, []string{"redis-secret", "pg-secret", "token=abc"}) {
+			t.Fatalf("redacted URL leaked a credential: %s", got)
+		}
+	}
+}
+
+func containsAny(value string, needles []string) bool {
+	for _, needle := range needles {
+		if strings.Contains(value, needle) {
+			return true
+		}
+	}
+	return false
 }
