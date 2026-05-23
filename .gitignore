@@ -4,6 +4,10 @@
 
 bin/
 coverage.out
+cover.out
+cover.*.out
+nightly-reports/
+trivy-results.sarif
 dist/
 docs-site/dist/
 

@@ -832,9 +832,7 @@ func TestGRPCRoundTripWithRedis(t *testing.T) {
 		_ = server.Serve(listener)
 	}()
 
-	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	conn, err := grpc.DialContext(dialCtx, listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatalf("dial grpc server: %v", err)
 	}
@@ -989,7 +987,7 @@ func concurrencyLimit(limit int64) *quotav1.Limit {
 	}
 }
 
-func assertUsed(t *testing.T, ctx context.Context, svc *QuotaService, limit *quotav1.Limit, want int64) {
+func assertUsed(t *testing.T, ctx context.Context, svc *QuotaService, limit *quotav1.Limit, want int64) { //nolint:revive // test helper: *testing.T conventionally leads the parameter list
 	t.Helper()
 	usage, err := svc.GetCurrentUsage(ctx, &quotav1.GetCurrentUsageRequest{
 		Context: &quotav1.RequestContext{Product: "workspace", Environment: "test"},
@@ -1019,7 +1017,7 @@ func requireMetric(t *testing.T, body, want string) {
 	}
 }
 
-func acquireLease(t *testing.T, ctx context.Context, svc *QuotaService, requestID string, limit *quotav1.Limit) *quotav1.AcquireLeaseResponse {
+func acquireLease(t *testing.T, ctx context.Context, svc *QuotaService, requestID string, limit *quotav1.Limit) *quotav1.AcquireLeaseResponse { //nolint:revive // test helper: *testing.T conventionally leads the parameter list
 	t.Helper()
 	resp, err := svc.AcquireLease(ctx, &quotav1.AcquireLeaseRequest{
 		RequestId:  requestID,

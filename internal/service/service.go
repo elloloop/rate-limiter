@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -540,7 +541,7 @@ func (s *QuotaService) buildLimitOps(limits []*quotav1.Limit, cost int64, now ti
 		switch limit.GetAlgorithm() {
 		case quotav1.Algorithm_ALGORITHM_FIXED_WINDOW_CALENDAR:
 			if concurrencyOnly {
-				return nil, fmt.Errorf("AcquireLease only accepts ALGORITHM_CONCURRENCY limits")
+				return nil, errors.New("AcquireLease only accepts ALGORITHM_CONCURRENCY limits")
 			}
 			key, reset, ttl := keys.FixedWindow(s.prefix, limit, now)
 			op.Kind = "counter"
@@ -550,7 +551,7 @@ func (s *QuotaService) buildLimitOps(limits []*quotav1.Limit, cost int64, now ti
 			op.TTLMS = ttl.Milliseconds()
 		case quotav1.Algorithm_ALGORITHM_FIXED_WINDOW_DURATION:
 			if concurrencyOnly {
-				return nil, fmt.Errorf("AcquireLease only accepts ALGORITHM_CONCURRENCY limits")
+				return nil, errors.New("AcquireLease only accepts ALGORITHM_CONCURRENCY limits")
 			}
 			key, reset, ttl := keys.DurationWindow(s.prefix, limit, now)
 			op.Kind = "counter"
@@ -560,7 +561,7 @@ func (s *QuotaService) buildLimitOps(limits []*quotav1.Limit, cost int64, now ti
 			op.TTLMS = ttl.Milliseconds()
 		case quotav1.Algorithm_ALGORITHM_SLIDING_WINDOW:
 			if concurrencyOnly {
-				return nil, fmt.Errorf("AcquireLease only accepts ALGORITHM_CONCURRENCY limits")
+				return nil, errors.New("AcquireLease only accepts ALGORITHM_CONCURRENCY limits")
 			}
 			readKeys, writeKey, reset, ttl := keys.SlidingBuckets(s.prefix, limit, now)
 			op.Kind = "counter"
@@ -570,28 +571,28 @@ func (s *QuotaService) buildLimitOps(limits []*quotav1.Limit, cost int64, now ti
 			op.TTLMS = ttl.Milliseconds()
 		case quotav1.Algorithm_ALGORITHM_TOKEN_BUCKET:
 			if concurrencyOnly {
-				return nil, fmt.Errorf("AcquireLease only accepts ALGORITHM_CONCURRENCY limits")
+				return nil, errors.New("AcquireLease only accepts ALGORITHM_CONCURRENCY limits")
 			}
 			op.Kind = "token_bucket"
 			op.WriteKey = keys.TokenBucket(s.prefix, limit)
 			op.TTLMS = 24 * time.Hour.Milliseconds()
 		case quotav1.Algorithm_ALGORITHM_LEAKY_BUCKET:
 			if concurrencyOnly {
-				return nil, fmt.Errorf("AcquireLease only accepts ALGORITHM_CONCURRENCY limits")
+				return nil, errors.New("AcquireLease only accepts ALGORITHM_CONCURRENCY limits")
 			}
 			op.Kind = "leaky_bucket"
 			op.WriteKey = keys.LeakyBucket(s.prefix, limit)
 			op.TTLMS = 24 * time.Hour.Milliseconds()
 		case quotav1.Algorithm_ALGORITHM_GCRA:
 			if concurrencyOnly {
-				return nil, fmt.Errorf("AcquireLease only accepts ALGORITHM_CONCURRENCY limits")
+				return nil, errors.New("AcquireLease only accepts ALGORITHM_CONCURRENCY limits")
 			}
 			op.Kind = "gcra"
 			op.WriteKey = keys.GCRA(s.prefix, limit)
 			op.TTLMS = 24 * time.Hour.Milliseconds()
 		case quotav1.Algorithm_ALGORITHM_CONCURRENCY:
 			if !concurrencyOnly {
-				return nil, fmt.Errorf("Consume/Reserve do not accept ALGORITHM_CONCURRENCY limits; use AcquireLease")
+				return nil, errors.New("Consume/Reserve do not accept ALGORITHM_CONCURRENCY limits; use AcquireLease")
 			}
 			op.Kind = "concurrency"
 			op.WriteKey = keys.LeaseSet(s.prefix, limit)
@@ -669,7 +670,7 @@ func (s *QuotaService) currentUsage(ctx context.Context, supplied []*quotav1.Lim
 			status.Remaining = remaining
 			status.RetryAfterMs = retry
 		case quotav1.Algorithm_ALGORITHM_CONCURRENCY:
-			active, err := s.store.Client().ZCount(ctx, keys.LeaseSet(s.prefix, limit), fmt.Sprint(now.UnixMilli()), "+inf").Result()
+			active, err := s.store.Client().ZCount(ctx, keys.LeaseSet(s.prefix, limit), strconv.FormatInt(now.UnixMilli(), 10), "+inf").Result()
 			if err != nil {
 				return nil, err
 			}

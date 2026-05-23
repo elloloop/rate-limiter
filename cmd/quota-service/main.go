@@ -54,7 +54,7 @@ func run(args []string) error {
 		return printConfig()
 	case "validate-limits":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: quota-service validate-limits /path/examples.yaml")
+			return errors.New("usage: quota-service validate-limits /path/examples.yaml")
 		}
 		return validateLimits(args[1])
 	case "version":
@@ -81,7 +81,7 @@ func serve() error {
 	if err != nil {
 		return fmt.Errorf("redis init: %w", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	m := metrics.New()
 	go func() {
@@ -95,7 +95,7 @@ func serve() error {
 	if err != nil {
 		return fmt.Errorf("event sink init: %w", err)
 	}
-	defer eventSink.Close()
+	defer func() { _ = eventSink.Close() }()
 
 	opts, err := grpcServerOptions(cfg)
 	if err != nil {
@@ -204,7 +204,7 @@ func printConfig() error {
 }
 
 func validateLimits(path string) error {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // path is an operator-supplied CLI argument to the validate-limits command
 	if err != nil {
 		return err
 	}
@@ -228,7 +228,7 @@ func validateLimits(path string) error {
 	}
 	fmt.Println(string(encoded))
 	if len(errs) > 0 {
-		return fmt.Errorf("invalid limits")
+		return errors.New("invalid limits")
 	}
 	return nil
 }
@@ -260,7 +260,7 @@ func grpcServerOptions(cfg config.Config) ([]grpc.ServerOption, error) {
 		}
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM(caBytes) {
-			return nil, fmt.Errorf("failed to parse client CA file")
+			return nil, errors.New("failed to parse client CA file")
 		}
 		tlsConfig.ClientCAs = pool
 		tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert

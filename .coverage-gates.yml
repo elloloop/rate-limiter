@@ -1,0 +1,19 @@
+# Per-package coverage floors. Thresholds sit a few points under current
+# coverage so they act as a regression ratchet: a change that drops a
+# package below its floor fails CI. Raise a floor whenever coverage climbs
+# comfortably above it.
+default: 60
+
+include:
+  - internal/
+  - cmd/
+
+packages:
+  cmd/quota-service: 15
+  internal/config: 68
+  internal/events: 5
+  internal/keys: 82
+  internal/limits: 64
+  internal/metrics: 60
+  internal/redisstore: 72
+  internal/service: 60

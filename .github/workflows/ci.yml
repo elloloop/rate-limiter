@@ -14,11 +14,38 @@ concurrency:
 
 env:
   GO_VERSION: '1.26.3'
+  GOLANGCI_LINT_VERSION: 'v2.12.1'
+  GOVULNCHECK_VERSION: 'v1.1.4'
 
 permissions:
   contents: read
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Lint — golangci-lint with the standard linter set.
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          # only-new-issues blocks lint regressions on PR diffs while
+          # tolerating pre-existing debt on main (tracked separately).
+          only-new-issues: true
+          args: --config=.golangci.yml
+
+  # ---------------------------------------------------------------------------
+  # 2. Protobuf — buf lint + generated code is committed.
+  # ---------------------------------------------------------------------------
   protobuf:
     name: Protobuf
     runs-on: ubuntu-latest
@@ -42,10 +69,31 @@ jobs:
       - name: Generated files are committed
         run: git diff --exit-code -- gen
 
-  test:
-    name: Go Tests
+  # ---------------------------------------------------------------------------
+  # 3. Vulnerability scan — Go's official CVE checker.
+  # ---------------------------------------------------------------------------
+  vuln:
+    name: Vulnerability scan
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@${{ env.GOVULNCHECK_VERSION }}
+      - name: govulncheck
+        run: govulncheck ./...
+
+  # ---------------------------------------------------------------------------
+  # 4. Build + unit/Redis tests + coverage gates.
+  # ---------------------------------------------------------------------------
+  test:
+    name: Build + Test + Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       redis:
         image: redis:7.4-alpine
@@ -66,11 +114,86 @@ jobs:
         run: go mod tidy
       - name: go.mod and go.sum are committed
         run: git diff --exit-code -- go.mod go.sum
-      - name: go test
+      - name: go build
+        run: go build ./...
+      - name: go test (race + coverage)
         env:
           QUOTA_TEST_REDIS_URL: redis://localhost:6379/0
-        run: go test -race -count=1 ./...
+        run: bash scripts/run-coverage.sh
+      - name: Coverage summary
+        run: go tool cover -func=cover.out | tail -n 20
+      - name: Coverage gate (internal/ >= 62%)
+        run: bash scripts/coverage-gate.sh cover.out 62 internal/
+      - name: Coverage gate (per-package)
+        run: bash scripts/coverage-gate.sh cover.out --config .coverage-gates.yml
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage
+          path: cover.out
+          if-no-files-found: warn
+          retention-days: 14
 
+  # ---------------------------------------------------------------------------
+  # 5. Boot smoke — links every package (incl. proto descriptors) and runs
+  #    the binary's non-serving subcommands. No external services needed.
+  # ---------------------------------------------------------------------------
+  smoke:
+    name: Boot smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: go test -tags=smoke
+        run: |
+          if compgen -G "tests/smoke/*.go" > /dev/null; then
+            go test -tags=smoke -timeout=120s ./tests/smoke/...
+          else
+            echo "no smoke tests under tests/smoke — skipping"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # 6. Fuzz smoke — quick fuzz on every PR.
+  # ---------------------------------------------------------------------------
+  fuzz:
+    name: Fuzz smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - name: Discover and run fuzz targets (seed corpus + 15s each)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t targets < <(
+            grep -rEn --include='*_test.go' '^func (Fuzz[A-Za-z0-9_]+)\(' . \
+              | sed -E 's|^(.*)/[^/]+:[0-9]+:func (Fuzz[A-Za-z0-9_]+).*$|\1\t\2|' \
+              | sort -u
+          )
+          if [[ ${#targets[@]} -eq 0 ]]; then
+            echo "no fuzz targets — skipping"; exit 0
+          fi
+          for entry in "${targets[@]}"; do
+            dir="${entry%$'\t'*}"
+            name="${entry##*$'\t'}"
+            echo "::group::fuzz $name in $dir"
+            go test -run="^${name}$" -timeout=120s "./$dir"
+            go test -run='^$' -fuzz="^${name}$" -fuzztime=15s -parallel=4 -timeout=120s "./$dir"
+            echo "::endgroup::"
+          done
+
+  # ---------------------------------------------------------------------------
+  # 7. Docs site builds.
+  # ---------------------------------------------------------------------------
   docs:
     name: Docs Build
     runs-on: ubuntu-latest
@@ -92,6 +215,9 @@ jobs:
         working-directory: docs-site
         run: pnpm build
 
+  # ---------------------------------------------------------------------------
+  # 8. Container build smoke.
+  # ---------------------------------------------------------------------------
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
@@ -111,6 +237,9 @@ jobs:
           cache-from: type=gha,scope=ci-docker
           cache-to: type=gha,mode=max,scope=ci-docker
 
+  # ---------------------------------------------------------------------------
+  # 9. Docker Compose end-to-end — exercises the critical RPCs over the wire.
+  # ---------------------------------------------------------------------------
   e2e:
     name: Docker Compose E2E
     runs-on: ubuntu-latest
@@ -128,6 +257,9 @@ jobs:
       - name: Run Docker Compose critical RPC e2e
         run: test/e2e/docker-compose-critical-rpcs.sh
 
+  # ---------------------------------------------------------------------------
+  # 10. Filesystem vulnerability scan (Trivy) — complements govulncheck.
+  # ---------------------------------------------------------------------------
   security:
     name: Filesystem Vulnerability Scan
     runs-on: ubuntu-latest
@@ -143,9 +275,25 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
 
+  # ---------------------------------------------------------------------------
+  # Aggregate gate — single required check on `main`.
+  # ---------------------------------------------------------------------------
   all-checks:
     name: All Checks Passed
     runs-on: ubuntu-latest
-    needs: [protobuf, test, docs, docker, e2e, security]
+    needs: [lint, protobuf, vuln, test, smoke, fuzz, docs, docker, e2e, security]
+    if: always()
     steps:
-      - run: echo "All checks passed"
+      - name: All required jobs succeeded
+        run: |
+          results='${{ toJSON(needs) }}'
+          echo "$results"
+          echo "$results" | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)
+          failed = [k for k, v in data.items() if v.get("result") != "success"]
+          if failed:
+            print("failed:", ", ".join(failed))
+            sys.exit(1)
+          print("all green")
+          '

@@ -25,7 +25,9 @@ Quota math inside.
   token buckets, leaky buckets, GCRA, and semaphores.
 - Emits factual usage events asynchronously to `none`, `stdout`, or Postgres.
 - Exposes gRPC health, gRPC reflection, and Prometheus metrics.
-- Ships as one Docker image: `ghcr.io/elloloop/rate-limiter`.
+- Ships two ways: a signed, multi-arch Docker image
+  (`ghcr.io/elloloop/rate-limiter`) and an importable Go module plus a
+  language-agnostic proto bundle (see [Consuming the API](#consuming-the-api)).
 
 ## What It Does Not Do
 
@@ -36,7 +38,8 @@ Quota math inside.
 - No billing or entitlement engine.
 - No customer-facing analytics APIs.
 - No Redis Cluster support in v1.
-- No SDKs in this repo yet.
+- No hand-written client SDKs (the generated gRPC stubs are importable; see
+  [Consuming the API](#consuming-the-api)).
 
 ## Quick Start
 
@@ -81,6 +84,30 @@ QUOTA_MTLS_CLIENT_CA_FILE=/etc/quota/tls/client-ca.crt
 QUOTA_LOG_LEVEL=info
 ```
 
+## Consuming the API
+
+The service has no application-layer auth and no hand-written SDK, but the
+`quota.v1` gRPC contract is published for consumers in two forms.
+
+**Go** — import the generated client straight from the module:
+
+```bash
+go get github.com/elloloop/rate-limiter@latest
+```
+
+```go
+import quotav1 "github.com/elloloop/rate-limiter/gen/quota/v1"
+
+conn, _ := grpc.NewClient("quota:8080", grpc.WithTransportCredentials(insecure.NewCredentials()))
+client := quotav1.NewQuotaServiceClient(conn)
+resp, _ := client.Consume(ctx, &quotav1.ConsumeRequest{ /* ... */ })
+```
+
+**Other languages** — each release attaches a `rate-limiter-protos-<version>`
+bundle (`.tar.gz` / `.zip` + `.sha256`) containing `quota/`, `buf.yaml`, and
+`buf.gen.yaml`. Codegen against that pinned contract instead of vendoring a git
+ref.
+
 ## Documentation
 
 The docs site is published through GitHub Pages:
@@ -108,23 +135,41 @@ docker run --rm -p 16379:6379 redis:7.4-alpine
 QUOTA_TEST_REDIS_URL=redis://localhost:16379/0 go test -race -count=1 ./...
 ```
 
-Run the Docker Compose critical RPC e2e test:
+Reproduce the full CI gate set locally with the Makefile:
 
 ```bash
-test/e2e/docker-compose-critical-rpcs.sh
+make help          # list targets
+make ci            # lint, tidy-check, vuln, build, test, smoke, fuzz
+make redis-up      # throwaway Redis for the Redis-backed paths
+make test-cover    # coverage profile + aggregate and per-package gates
+make ci-full       # ci + docker-compose critical-RPC e2e
 ```
 
-CI runs protobuf checks, unit tests, race-enabled Redis integration tests, docs
-builds, Docker builds, a Docker Compose critical RPC e2e test, and Trivy
-high/critical vulnerability scanning.
+CI (`.github/workflows/ci.yml`) runs golangci-lint, protobuf checks,
+`govulncheck`, race-enabled unit/Redis tests with per-package coverage gates
+(`.coverage-gates.yml`), a boot smoke, a fuzz smoke, docs and Docker builds, a
+Docker Compose critical-RPC e2e, and a Trivy filesystem scan. CodeQL
+(`codeql.yml`) and a nightly race/fuzz loop (`nightly.yml`) run on a schedule.
 
 ## Releases
 
-Push a `v*` tag to publish:
+Push a `v*` tag to publish. The release re-runs every CI gate, then:
 
-- `ghcr.io/elloloop/rate-limiter:<version>`
-- `ghcr.io/elloloop/rate-limiter:latest`
-- a GitHub Release with protobuf archives and checksums
-- a release-time docs build verification
+- builds and pushes the multi-arch image
+  `ghcr.io/elloloop/rate-limiter:<version>` (and `:latest`) with SBOM and
+  provenance attestations;
+- signs each tag with cosign keyless OIDC;
+- scans the published image with Trivy (HIGH/CRITICAL gate, SARIF to GitHub
+  Security);
+- pulls the image back and verifies its `version` output;
+- creates a GitHub Release with the proto bundle and checksums.
+
+Verify the published image's signature:
+
+```bash
+cosign verify ghcr.io/elloloop/rate-limiter:<version> \
+  --certificate-identity-regexp '^https://github.com/elloloop/rate-limiter/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
 
 GitHub Pages documentation deploys from `main` through the docs workflow.

@@ -113,12 +113,16 @@ func (m *Metrics) Handler() http.Handler {
 }
 
 func (m *Metrics) Serve(ctx context.Context, bindAddr string) error {
-	server := &http.Server{Addr: bindAddr, Handler: m.Handler()}
-	go func() {
+	server := &http.Server{
+		Addr:              bindAddr,
+		Handler:           m.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	go func() { //nolint:gosec // shutdown runs after ctx is canceled and must use a fresh context
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = server.Shutdown(shutdownCtx)
+		_ = server.Shutdown(shutdownCtx) //nolint:contextcheck // deliberate: ctx is already canceled, shutdown needs a fresh context
 	}()
 	err := server.ListenAndServe()
 	if err == http.ErrServerClosed {

@@ -1,0 +1,176 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: '1.26.3'
+
+permissions:
+  contents: read
+
+jobs:
+  race_flake_loop:
+    name: Race flake loop
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: go test -count=20 -race ./...
+        env:
+          QUOTA_TEST_REDIS_URL: redis://localhost:6379/0
+        run: |
+          GO_TEST_REPORT_DIR=nightly-reports \
+            bash scripts/go-test-json.sh "Nightly race flake loop" -- \
+              -count=20 -race -shuffle=on -timeout=7200s ./...
+
+      - name: Upload nightly report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nightly-reports-race-flake-loop
+          path: nightly-reports
+          if-no-files-found: ignore
+          retention-days: 30
+
+  fuzz:
+    name: Fuzz targets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Discover and run fuzz targets (10m each)
+        run: |
+          GO_FUZZ_REPORT_DIR=nightly-reports \
+            bash scripts/run-go-fuzz-targets.sh 10m
+
+      - name: Upload nightly report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nightly-reports-fuzz
+          path: nightly-reports
+          if-no-files-found: ignore
+          retention-days: 30
+
+  report:
+    name: Report nightly failure
+    runs-on: ubuntu-24.04
+    needs: [race_flake_loop, fuzz]
+    if: ${{ always() && (needs.race_flake_loop.result == 'failure' || needs.fuzz.result == 'failure') }}
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          pattern: nightly-reports-*
+          path: nightly-reports
+          merge-multiple: true
+
+      - name: Open nightly failure issue
+        uses: actions/github-script@v9
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            const needs = JSON.parse(process.env.NEEDS_JSON);
+            const failedJobs = Object.entries(needs)
+              .filter(([, job]) => job.result === 'failure')
+              .map(([name]) => name);
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            const labels = [
+              { name: 'nightly', color: '5319e7', description: 'Nightly scheduled workflow' },
+              { name: 'flake', color: 'fbca04', description: 'Flake or long-running test failure' },
+            ];
+            for (const label of labels) {
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label.name,
+                });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  ...label,
+                });
+              }
+            }
+
+            function walk(dir) {
+              if (!fs.existsSync(dir)) return [];
+              return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+                const fullPath = path.join(dir, entry.name);
+                return entry.isDirectory() ? walk(fullPath) : [fullPath];
+              });
+            }
+
+            const reports = walk('nightly-reports')
+              .filter((file) => file.endsWith('.md'))
+              .sort()
+              .map((file) => {
+                const name = path.relative('nightly-reports', file);
+                return `#### ${name}\n\n${fs.readFileSync(file, 'utf8')}`;
+              });
+
+            const now = new Date().toISOString();
+            const bodyParts = [
+              `Nightly workflow failed at ${now}.`,
+              '',
+              `Run: ${runUrl}`,
+              '',
+              'Failed jobs:',
+              ...failedJobs.map((job) => `- \`${job}\``),
+              '',
+              'Reports:',
+              reports.length ? reports.join('\n') : 'No markdown reports were uploaded. Check the failed job logs.',
+            ];
+            let body = bodyParts.join('\n');
+            if (body.length > 60000) {
+              body = `${body.slice(0, 60000)}\n\nReport truncated. See ${runUrl} for full logs and artifacts.`;
+            }
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Nightly flake detection failed: ${now.slice(0, 10)}`,
+              body,
+              labels: labels.map((label) => label.name),
+            });

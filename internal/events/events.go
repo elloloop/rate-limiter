@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver with database/sql
 
 	quotav1 "github.com/elloloop/rate-limiter/gen/quota/v1"
 )
@@ -106,7 +106,7 @@ func (s *postgresSink) Emit(ctx context.Context, event Event) {
 		s.logger.Warn("event marshal failed", "error", err)
 		return
 	}
-	go func() {
+	go func() { //nolint:gosec,contextcheck // delivery is best-effort and must outlive the request context (see below)
 		// Event delivery is best-effort and must not inherit an RPC context that
 		// may be canceled as soon as the hot-path handler returns.
 		insertCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

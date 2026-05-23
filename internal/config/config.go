@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -51,19 +52,19 @@ func (c Config) Validate() error {
 	switch c.EventSink {
 	case "none", "stdout", "postgres":
 	default:
-		return fmt.Errorf("QUOTA_EVENT_SINK must be one of none, stdout, postgres")
+		return errors.New("QUOTA_EVENT_SINK must be one of none, stdout, postgres")
 	}
 	if c.EventSink == "postgres" && c.EventDatabaseURL == "" {
-		return fmt.Errorf("QUOTA_EVENT_DATABASE_URL is required when QUOTA_EVENT_SINK=postgres")
+		return errors.New("QUOTA_EVENT_DATABASE_URL is required when QUOTA_EVENT_SINK=postgres")
 	}
 	if c.TLSEnabled && (c.TLSCertFile == "" || c.TLSKeyFile == "") {
-		return fmt.Errorf("TLS cert and key files are required when QUOTA_TLS_ENABLED=true")
+		return errors.New("TLS cert and key files are required when QUOTA_TLS_ENABLED=true")
 	}
 	if c.MTLSEnabled && !c.TLSEnabled {
-		return fmt.Errorf("QUOTA_TLS_ENABLED=true is required when QUOTA_MTLS_ENABLED=true")
+		return errors.New("QUOTA_TLS_ENABLED=true is required when QUOTA_MTLS_ENABLED=true")
 	}
 	if c.MTLSEnabled && c.MTLSClientCAFile == "" {
-		return fmt.Errorf("QUOTA_MTLS_CLIENT_CA_FILE is required when QUOTA_MTLS_ENABLED=true")
+		return errors.New("QUOTA_MTLS_CLIENT_CA_FILE is required when QUOTA_MTLS_ENABLED=true")
 	}
 	return nil
 }
