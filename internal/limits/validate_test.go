@@ -34,6 +34,18 @@ func TestValidateRejectsEmptyLimitSet(t *testing.T) {
 	assertFieldError(t, errs, "limits")
 }
 
+func TestValidateRejectsMissingRequiredLimitFields(t *testing.T) {
+	errs, _ := Validate("assistant.llm.tokens", []*quotav1.Limit{{}})
+	for _, field := range []string{"limit_id", "scope_key", "action", "unit", "limit", "algorithm"} {
+		assertFieldError(t, errs, field)
+	}
+	for _, err := range errs {
+		if err.GetLimitId() != "limits[0]" {
+			t.Fatalf("missing-id errors should use index fallback id, got %q", err.GetLimitId())
+		}
+	}
+}
+
 func TestValidateRejectsBusinessMismatchedAction(t *testing.T) {
 	errs, _ := Validate("workspace.email.recipients", []*quotav1.Limit{{
 		LimitId:   "user_daily_tokens",

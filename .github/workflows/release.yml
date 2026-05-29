@@ -75,8 +75,8 @@ jobs:
         env:
           QUOTA_TEST_REDIS_URL: redis://localhost:6379/0
         run: bash scripts/run-coverage.sh
-      - name: Coverage gate (internal/ + ratelimiterserver >= 90%)
-        run: bash scripts/coverage-gate.sh cover.out 90 internal/ ratelimiterserver
+      - name: Coverage gate (internal/ + ratelimiterserver >= 95%)
+        run: bash scripts/coverage-gate.sh cover.out 95 internal/ ratelimiterserver
       - name: Coverage gate (per-package)
         run: bash scripts/coverage-gate.sh cover.out --config .coverage-gates.yml
 

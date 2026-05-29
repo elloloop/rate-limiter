@@ -2,6 +2,7 @@ package events
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"database/sql"
 	"database/sql/driver"
@@ -9,10 +10,14 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	quotav1 "github.com/elloloop/rate-limiter/gen/quota/v1"
 )
 
 func nullLogger() *slog.Logger {
@@ -195,6 +200,15 @@ func TestStdoutSinkWritesEventJSON(t *testing.T) {
 	}
 }
 
+func TestStdoutSinkLogsMarshalFailures(t *testing.T) {
+	logs := &lockedBuffer{}
+	sink := stdoutSink{logger: slog.New(slog.NewTextHandler(logs, nil))}
+
+	sink.Emit(context.Background(), eventWithMarshalFailure())
+
+	waitForLog(t, logs, "event marshal failed")
+}
+
 func TestPostgresSinkEmitInsertsEventAndCloses(t *testing.T) {
 	execs := make(chan eventTestExec, 1)
 	db := sql.OpenDB(eventTestConnector{execs: execs})
@@ -253,6 +267,55 @@ func TestPostgresSinkEmitInsertsEventAndCloses(t *testing.T) {
 	}
 }
 
+func TestPostgresSinkLogsMarshalFailures(t *testing.T) {
+	logs := &lockedBuffer{}
+	db := sql.OpenDB(eventTestConnector{execs: make(chan eventTestExec, 1)})
+	sink := &postgresSink{
+		db:     db,
+		logger: slog.New(slog.NewTextHandler(logs, nil)),
+	}
+	t.Cleanup(func() {
+		_ = sink.Close()
+	})
+
+	sink.Emit(context.Background(), eventWithMarshalFailure())
+
+	waitForLog(t, logs, "event marshal failed")
+}
+
+func TestPostgresSinkLogsInsertFailures(t *testing.T) {
+	logs := &lockedBuffer{}
+	execs := make(chan eventTestExec, 1)
+	db := sql.OpenDB(eventTestConnector{
+		execs:   execs,
+		execErr: errors.New("insert failed"),
+	})
+	sink := &postgresSink{
+		db:     db,
+		logger: slog.New(slog.NewTextHandler(logs, nil)),
+	}
+	t.Cleanup(func() {
+		_ = sink.Close()
+	})
+
+	sink.Emit(context.Background(), Event{
+		EventType:   "quota.consumed",
+		Timestamp:   time.Unix(100, 0).UTC(),
+		RequestID:   "req-postgres",
+		Product:     "workspace",
+		Environment: "prod",
+		Action:      "workspace.email.recipients",
+		Allowed:     true,
+	})
+
+	select {
+	case <-execs:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for insert attempt")
+	}
+	waitForLog(t, logs, "event insert failed")
+}
+
 func assertNamedValue(t *testing.T, got driver.NamedValue, want string) {
 	t.Helper()
 	if got.Value != want {
@@ -266,7 +329,8 @@ type eventTestExec struct {
 }
 
 type eventTestConnector struct {
-	execs chan eventTestExec
+	execs   chan eventTestExec
+	execErr error
 }
 
 func (c eventTestConnector) Connect(context.Context) (driver.Conn, error) {
@@ -284,7 +348,8 @@ func (eventTestDriver) Open(string) (driver.Conn, error) {
 }
 
 type eventTestConn struct {
-	execs chan eventTestExec
+	execs   chan eventTestExec
+	execErr error
 }
 
 func (eventTestConn) Prepare(string) (driver.Stmt, error) {
@@ -302,5 +367,57 @@ func (c eventTestConn) ExecContext(_ context.Context, query string, args []drive
 		query: query,
 		args:  append([]driver.NamedValue(nil), args...),
 	}
-	return driver.RowsAffected(1), nil
+	return driver.RowsAffected(1), c.execErr
+}
+
+func eventWithMarshalFailure() Event {
+	return Event{
+		EventType:   "quota.reserved",
+		Timestamp:   time.Unix(100, 0).UTC(),
+		RequestID:   "req-invalid-json",
+		Product:     "workspace",
+		Environment: "prod",
+		Action:      "workspace.email.recipients",
+		Allowed:     true,
+		Reservation: &quotav1.Reservation{
+			ReservationId: "res-invalid-json",
+			Impacts: []*quotav1.ReservationImpact{{
+				RefillRatePerSec: math.NaN(),
+			}},
+		},
+	}
+}
+
+func waitForLog(t *testing.T, logs *lockedBuffer, want string) {
+	t.Helper()
+	deadline := time.After(time.Second)
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for {
+		if strings.Contains(logs.String(), want) {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("log missing %q: %s", want, logs.String())
+		case <-tick.C:
+		}
+	}
+}
+
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.b.String()
 }
