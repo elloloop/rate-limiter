@@ -1,4 +1,4 @@
-package redisstore
+package redis
 
 import (
 	"context"
@@ -43,5 +43,18 @@ func TestNewRejectsInvalidRedisURL(t *testing.T) {
 	_, err := New(context.Background(), "://not-a-url")
 	if err == nil {
 		t.Fatal("expected invalid redis URL error")
+	}
+}
+
+func TestNewRejectsUnreachableRedis(t *testing.T) {
+	// Port 1 is reserved (tcpmux) and effectively never accepts
+	// connections, so this exercises the synchronous ping at
+	// construction without depending on test orchestration.
+	_, err := New(context.Background(), "redis://127.0.0.1:1/0")
+	if err == nil {
+		t.Fatal("expected unreachable Redis to fail New")
+	}
+	if !strings.Contains(err.Error(), "ping redis") {
+		t.Fatalf("expected ping error, got: %v", err)
 	}
 }

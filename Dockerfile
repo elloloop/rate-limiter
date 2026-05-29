@@ -26,6 +26,7 @@ COPY cmd/ ./cmd/
 COPY gen/ ./gen/
 COPY internal/ ./internal/
 COPY quota/ ./quota/
+COPY ratelimiterserver/ ./ratelimiterserver/
 COPY VERSION ./
 
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \

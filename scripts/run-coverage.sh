@@ -11,5 +11,5 @@ rm -f cover.out cover.*.out
 
 go test -count=1 -race -timeout=600s \
   -coverprofile=cover.out \
-  -coverpkg=./internal/...,./cmd/... \
+  -coverpkg=./internal/...,./cmd/...,./ratelimiterserver/... \
   ./...

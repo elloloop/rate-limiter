@@ -27,8 +27,8 @@ import (
 	"github.com/elloloop/rate-limiter/internal/events"
 	"github.com/elloloop/rate-limiter/internal/limits"
 	"github.com/elloloop/rate-limiter/internal/metrics"
-	"github.com/elloloop/rate-limiter/internal/redisstore"
 	"github.com/elloloop/rate-limiter/internal/service"
+	rlredis "github.com/elloloop/rate-limiter/ratelimiterserver/backend/redis"
 )
 
 var (
@@ -77,7 +77,7 @@ func serve() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	store, err := redisstore.New(ctx, cfg.RedisURL)
+	store, err := rlredis.New(ctx, cfg.RedisURL)
 	if err != nil {
 		return fmt.Errorf("redis init: %w", err)
 	}

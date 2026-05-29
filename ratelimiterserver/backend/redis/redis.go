@@ -1,15 +1,17 @@
-package redisstore
+package redis
 
 import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/redis/go-redis/v9"
+	redisclient "github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	quotav1 "github.com/elloloop/rate-limiter/gen/quota/v1"
@@ -33,8 +35,10 @@ const (
 	defaultLeaseExtraTTL       = time.Hour
 )
 
-type Store struct {
-	client       *redis.Client
+// Backend is the Redis-backed implementation of the
+// ratelimiterserver Backend interface. Construct it with [New].
+type Backend struct {
+	client       *redisclient.Client
 	mu           sync.RWMutex
 	scripts      map[string]string
 	scriptBodies map[string]string
@@ -151,29 +155,58 @@ type ExpireReservationsResult struct {
 	Scanned int64 `json:"scanned"`
 }
 
-func New(ctx context.Context, redisURL string) (*Store, error) {
-	opts, err := redis.ParseURL(redisURL)
+// BucketState reports the persisted token / leak state of a bucket
+// algorithm key. Tokens and LastRefillMs are zero when the key does
+// not yet exist; callers treat that as a full bucket.
+type BucketState struct {
+	Tokens       float64
+	LastRefillMs int64
+	Exists       bool
+}
+
+// New dials Redis at dsn, pings to confirm reachability, and
+// pre-loads every Lua script the rate-limiter algorithms depend on.
+// A failure at any of those steps closes the client and returns the
+// underlying error so construction never silently leaves a broken
+// backend.
+func New(ctx context.Context, dsn string) (*Backend, error) {
+	opts, err := redisclient.ParseURL(dsn)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse redis dsn: %w", err)
 	}
-	client := redis.NewClient(opts)
-	store := &Store{client: client, scripts: map[string]string{}, scriptBodies: map[string]string{}}
-	if err := store.LoadScripts(ctx); err != nil {
+	client := redisclient.NewClient(opts)
+	if err := client.Ping(ctx).Err(); err != nil {
+		_ = client.Close()
+		return nil, fmt.Errorf("ping redis: %w", err)
+	}
+	backend := &Backend{client: client, scripts: map[string]string{}, scriptBodies: map[string]string{}}
+	if err := backend.LoadScripts(ctx); err != nil {
 		_ = client.Close()
 		return nil, err
 	}
-	return store, nil
+	return backend, nil
 }
 
-func (s *Store) Close() error {
-	return s.client.Close()
+func (b *Backend) Close() error {
+	return b.client.Close()
 }
 
-func (s *Store) Client() *redis.Client {
-	return s.client
+// FlushAll deletes every key in the connected Redis database. It
+// exists solely for integration-test setup; production code must not
+// call it.
+func (b *Backend) FlushAll(ctx context.Context) error {
+	return b.client.FlushDB(ctx).Err()
 }
 
-func (s *Store) LoadScripts(ctx context.Context) error {
+// FlushScripts removes every loaded script from the Redis script
+// cache, forcing the next EVALSHA to fall back through the NOSCRIPT
+// reload path. It exists for the integration test that exercises
+// that fallback; production code must not call it.
+func (b *Backend) FlushScripts(ctx context.Context) error {
+	return b.client.ScriptFlush(ctx).Err()
+}
+
+func (b *Backend) LoadScripts(ctx context.Context) error {
 	for _, name := range []string{
 		scriptConsume,
 		scriptReserve,
@@ -189,34 +222,56 @@ func (s *Store) LoadScripts(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		sha, err := s.client.ScriptLoad(ctx, string(body)).Result()
+		sha, err := b.client.ScriptLoad(ctx, string(body)).Result()
 		if err != nil {
 			return fmt.Errorf("load %s.lua: %w", name, err)
 		}
-		s.mu.Lock()
-		s.scripts[name] = sha
-		s.scriptBodies[name] = string(body)
-		s.mu.Unlock()
+		b.mu.Lock()
+		b.scripts[name] = sha
+		b.scriptBodies[name] = string(body)
+		b.mu.Unlock()
 	}
 	return nil
 }
 
-func (s *Store) ScriptSHAs() []string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	shas := make([]string, 0, len(s.scripts))
-	for _, sha := range s.scripts {
-		shas = append(shas, sha)
-	}
-	return shas
+// Ping reports whether Redis is reachable. It is used by the
+// ratelimiterserver health probe and the GetRedisStatus RPC.
+func (b *Backend) Ping(ctx context.Context) error {
+	return b.client.Ping(ctx).Err()
 }
 
-func (s *Store) Consume(ctx context.Context, idemKey string, now time.Time, ops []LimitOp, dryRun bool, decisionID string) (DecisionResult, error) {
+// ScriptsLoaded checks that every script New uploaded is still
+// present server-side. A reply with any false entry indicates a
+// SCRIPT FLUSH (or a failover to a replica that never saw the
+// scripts); the caller should re-run LoadScripts.
+func (b *Backend) ScriptsLoaded(ctx context.Context) (bool, error) {
+	b.mu.RLock()
+	shas := make([]string, 0, len(b.scripts))
+	for _, sha := range b.scripts {
+		shas = append(shas, sha)
+	}
+	b.mu.RUnlock()
+	if len(shas) == 0 {
+		return false, nil
+	}
+	exists, err := b.client.ScriptExists(ctx, shas...).Result()
+	if err != nil {
+		return false, err
+	}
+	for _, ok := range exists {
+		if !ok {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func (b *Backend) Consume(ctx context.Context, idemKey string, now time.Time, ops []LimitOp, dryRun bool, decisionID string) (DecisionResult, error) {
 	args, err := json.Marshal(ops)
 	if err != nil {
 		return DecisionResult{}, err
 	}
-	raw, err := s.evalText(ctx, scriptConsume, nil,
+	raw, err := b.evalText(ctx, scriptConsume, nil,
 		idemKey,
 		millis(defaultIdempotencyTTL),
 		now.UnixMilli(),
@@ -230,7 +285,7 @@ func (s *Store) Consume(ctx context.Context, idemKey string, now time.Time, ops 
 	return parseDecision(raw)
 }
 
-func (s *Store) Reserve(ctx context.Context, idemKey string, now time.Time, ops []LimitOp, dryRun bool, reservationKey, reservationExpiryIndexKey string, reservation *quotav1.Reservation, decisionID string) (DecisionResult, error) {
+func (b *Backend) Reserve(ctx context.Context, idemKey string, now time.Time, ops []LimitOp, dryRun bool, reservationKey, reservationExpiryIndexKey string, reservation *quotav1.Reservation, decisionID string) (DecisionResult, error) {
 	args, err := json.Marshal(ops)
 	if err != nil {
 		return DecisionResult{}, err
@@ -243,7 +298,7 @@ func (s *Store) Reserve(ctx context.Context, idemKey string, now time.Time, ops 
 	if ttl < defaultReservationExtraTTL {
 		ttl = defaultReservationExtraTTL
 	}
-	raw, err := s.evalText(ctx, scriptReserve, nil,
+	raw, err := b.evalText(ctx, scriptReserve, nil,
 		idemKey,
 		millis(ttl),
 		now.UnixMilli(),
@@ -261,8 +316,8 @@ func (s *Store) Reserve(ctx context.Context, idemKey string, now time.Time, ops 
 	return parseDecision(raw)
 }
 
-func (s *Store) IncrementReservation(ctx context.Context, idemKey, reservationKey, reservationExpiryIndexKey string, deltaCost int64, now time.Time, decisionID string) (IncrementReservationResult, error) {
-	raw, err := s.evalText(ctx, scriptIncrementReservation, nil,
+func (b *Backend) IncrementReservation(ctx context.Context, idemKey, reservationKey, reservationExpiryIndexKey string, deltaCost int64, now time.Time, decisionID string) (IncrementReservationResult, error) {
+	raw, err := b.evalText(ctx, scriptIncrementReservation, nil,
 		idemKey,
 		millis(defaultIdempotencyTTL),
 		reservationKey,
@@ -302,8 +357,8 @@ func (s *Store) IncrementReservation(ctx context.Context, idemKey, reservationKe
 	return result, nil
 }
 
-func (s *Store) FinalizeReservation(ctx context.Context, idemKey, reservationKey, reservationExpiryIndexKey string, actualCost int64, now time.Time) (FinalizeResult, error) {
-	raw, err := s.evalText(ctx, scriptFinalizeReservation, nil,
+func (b *Backend) FinalizeReservation(ctx context.Context, idemKey, reservationKey, reservationExpiryIndexKey string, actualCost int64, now time.Time) (FinalizeResult, error) {
+	raw, err := b.evalText(ctx, scriptFinalizeReservation, nil,
 		idemKey,
 		millis(defaultIdempotencyTTL),
 		reservationKey,
@@ -346,8 +401,8 @@ func (s *Store) FinalizeReservation(ctx context.Context, idemKey, reservationKey
 	return result, nil
 }
 
-func (s *Store) ReleaseReservation(ctx context.Context, idemKey, reservationKey, reservationExpiryIndexKey string, now time.Time) (ReleaseReservationResult, error) {
-	raw, err := s.evalText(ctx, scriptReleaseReservation, nil,
+func (b *Backend) ReleaseReservation(ctx context.Context, idemKey, reservationKey, reservationExpiryIndexKey string, now time.Time) (ReleaseReservationResult, error) {
+	raw, err := b.evalText(ctx, scriptReleaseReservation, nil,
 		idemKey,
 		millis(defaultIdempotencyTTL),
 		reservationKey,
@@ -383,8 +438,8 @@ func (s *Store) ReleaseReservation(ctx context.Context, idemKey, reservationKey,
 	return result, nil
 }
 
-func (s *Store) ExpireReservations(ctx context.Context, reservationExpiryIndexKey string, now time.Time, batchSize int64) (ExpireReservationsResult, error) {
-	raw, err := s.evalText(ctx, scriptExpireReservations, nil,
+func (b *Backend) ExpireReservations(ctx context.Context, reservationExpiryIndexKey string, now time.Time, batchSize int64) (ExpireReservationsResult, error) {
+	raw, err := b.evalText(ctx, scriptExpireReservations, nil,
 		reservationExpiryIndexKey,
 		now.UnixMilli(),
 		batchSize,
@@ -399,7 +454,7 @@ func (s *Store) ExpireReservations(ctx context.Context, reservationExpiryIndexKe
 	return result, nil
 }
 
-func (s *Store) AcquireLease(ctx context.Context, idemKey, leaseKey string, lease *quotav1.Lease, leaseTTL time.Duration, ops []LimitOp, dryRun bool, decisionID string) (DecisionResult, error) {
+func (b *Backend) AcquireLease(ctx context.Context, idemKey, leaseKey string, lease *quotav1.Lease, leaseTTL time.Duration, ops []LimitOp, dryRun bool, decisionID string) (DecisionResult, error) {
 	args, err := json.Marshal(ops)
 	if err != nil {
 		return DecisionResult{}, err
@@ -408,7 +463,7 @@ func (s *Store) AcquireLease(ctx context.Context, idemKey, leaseKey string, leas
 	if err != nil {
 		return DecisionResult{}, err
 	}
-	raw, err := s.evalText(ctx, scriptAcquireLease, nil,
+	raw, err := b.evalText(ctx, scriptAcquireLease, nil,
 		idemKey,
 		millis(leaseTTL+defaultLeaseExtraTTL),
 		leaseKey,
@@ -427,8 +482,8 @@ func (s *Store) AcquireLease(ctx context.Context, idemKey, leaseKey string, leas
 	return parseDecision(raw)
 }
 
-func (s *Store) RenewLease(ctx context.Context, idemKey, leaseKey, leaseID string, extendTTL time.Duration, now time.Time) (LeaseResult, error) {
-	raw, err := s.evalText(ctx, scriptRenewLease, nil,
+func (b *Backend) RenewLease(ctx context.Context, idemKey, leaseKey, leaseID string, extendTTL time.Duration, now time.Time) (LeaseResult, error) {
+	raw, err := b.evalText(ctx, scriptRenewLease, nil,
 		idemKey,
 		millis(defaultIdempotencyTTL),
 		leaseKey,
@@ -442,8 +497,8 @@ func (s *Store) RenewLease(ctx context.Context, idemKey, leaseKey, leaseID strin
 	return parseLeaseResult(raw)
 }
 
-func (s *Store) ReleaseLease(ctx context.Context, idemKey, leaseKey, leaseID string) (LeaseResult, error) {
-	raw, err := s.evalText(ctx, scriptReleaseLease, nil,
+func (b *Backend) ReleaseLease(ctx context.Context, idemKey, leaseKey, leaseID string) (LeaseResult, error) {
+	raw, err := b.evalText(ctx, scriptReleaseLease, nil,
 		idemKey,
 		millis(defaultIdempotencyTTL),
 		leaseKey,
@@ -455,10 +510,10 @@ func (s *Store) ReleaseLease(ctx context.Context, idemKey, leaseKey, leaseID str
 	return parseLeaseResult(raw)
 }
 
-func (s *Store) GetReservation(ctx context.Context, key string) (*quotav1.Reservation, error) {
-	raw, err := s.client.Get(ctx, key).Bytes()
+func (b *Backend) GetReservation(ctx context.Context, key string) (*quotav1.Reservation, error) {
+	raw, err := b.client.Get(ctx, key).Bytes()
 	if err != nil {
-		return nil, err
+		return nil, mapNotFound(err)
 	}
 	res := &quotav1.Reservation{}
 	if err := protojson.Unmarshal(raw, res); err != nil {
@@ -467,16 +522,74 @@ func (s *Store) GetReservation(ctx context.Context, key string) (*quotav1.Reserv
 	return res, nil
 }
 
-func (s *Store) GetLease(ctx context.Context, key string) (*quotav1.Lease, error) {
-	raw, err := s.client.Get(ctx, key).Bytes()
+func (b *Backend) GetLease(ctx context.Context, key string) (*quotav1.Lease, error) {
+	raw, err := b.client.Get(ctx, key).Bytes()
 	if err != nil {
-		return nil, err
+		return nil, mapNotFound(err)
 	}
 	lease := &quotav1.Lease{}
 	if err := protojson.Unmarshal(raw, lease); err != nil {
 		return nil, err
 	}
 	return lease, nil
+}
+
+// CounterValue returns the integer value stored at key, treating a
+// missing key as zero. It backs the fixed-window and sliding-window
+// usage queries.
+func (b *Backend) CounterValue(ctx context.Context, key string) (int64, error) {
+	value, err := b.client.Get(ctx, key).Int64()
+	if errors.Is(err, redisclient.Nil) {
+		return 0, nil
+	}
+	return value, err
+}
+
+// BucketState returns the persisted state of a token / leaky bucket
+// key. A missing key is reported with Exists=false; callers translate
+// that into a full bucket.
+func (b *Backend) BucketState(ctx context.Context, key string) (BucketState, error) {
+	fields, err := b.client.HMGet(ctx, key, "tokens", "last_refill_ms").Result()
+	if err != nil {
+		return BucketState{}, err
+	}
+	state := BucketState{}
+	if fields[0] != nil {
+		tokens, parseErr := strconv.ParseFloat(fmt.Sprint(fields[0]), 64)
+		if parseErr == nil {
+			state.Tokens = tokens
+			state.Exists = true
+		}
+	}
+	if fields[1] != nil {
+		last, parseErr := strconv.ParseInt(fmt.Sprint(fields[1]), 10, 64)
+		if parseErr == nil {
+			state.LastRefillMs = last
+			state.Exists = true
+		}
+	}
+	return state, nil
+}
+
+// GCRAValue returns the GCRA TAT (theoretical arrival time) stored at
+// key. A missing key reports (0, false, nil); the caller treats that
+// as a fully replenished bucket.
+func (b *Backend) GCRAValue(ctx context.Context, key string) (float64, bool, error) {
+	raw, err := b.client.Get(ctx, key).Float64()
+	if errors.Is(err, redisclient.Nil) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return raw, true, nil
+}
+
+// ConcurrencyCount returns the number of active leases recorded in
+// the concurrency sorted-set at key — entries whose score (expiry
+// timestamp in ms) is at or after now.
+func (b *Backend) ConcurrencyCount(ctx context.Context, key string, now time.Time) (int64, error) {
+	return b.client.ZCount(ctx, key, strconv.FormatInt(now.UnixMilli(), 10), "+inf").Result()
 }
 
 func parseDecision(raw string) (DecisionResult, error) {
@@ -514,29 +627,41 @@ func parseLeaseResult(raw string) (LeaseResult, error) {
 	return result, nil
 }
 
-func (s *Store) evalText(ctx context.Context, scriptName string, keys []string, args ...any) (string, error) {
-	s.mu.RLock()
-	sha := s.scripts[scriptName]
-	s.mu.RUnlock()
+func (b *Backend) evalText(ctx context.Context, scriptName string, keys []string, args ...any) (string, error) {
+	b.mu.RLock()
+	sha := b.scripts[scriptName]
+	b.mu.RUnlock()
 
-	raw, err := s.client.EvalSha(ctx, sha, keys, args...).Text()
+	raw, err := b.client.EvalSha(ctx, sha, keys, args...).Text()
 	if err == nil || !isNoScript(err) {
 		return raw, err
 	}
 
-	s.mu.Lock()
-	body := s.scriptBodies[scriptName]
-	loadedSHA, loadErr := s.client.ScriptLoad(ctx, body).Result()
+	b.mu.Lock()
+	body := b.scriptBodies[scriptName]
+	loadedSHA, loadErr := b.client.ScriptLoad(ctx, body).Result()
 	if loadErr == nil {
-		s.scripts[scriptName] = loadedSHA
+		b.scripts[scriptName] = loadedSHA
 		sha = loadedSHA
 	}
-	s.mu.Unlock()
+	b.mu.Unlock()
 	if loadErr != nil {
 		return "", fmt.Errorf("reload %s.lua after NOSCRIPT: %w", scriptName, loadErr)
 	}
 
-	return s.client.EvalSha(ctx, sha, keys, args...).Text()
+	return b.client.EvalSha(ctx, sha, keys, args...).Text()
+}
+
+// ErrNotFound is returned by GetReservation / GetLease when the key
+// does not exist. It lets the ratelimiterserver translate misses into
+// gRPC NotFound without depending on go-redis's sentinel.
+var ErrNotFound = errors.New("redis backend: key not found")
+
+func mapNotFound(err error) error {
+	if errors.Is(err, redisclient.Nil) {
+		return ErrNotFound
+	}
+	return err
 }
 
 func isNoScript(err error) bool {

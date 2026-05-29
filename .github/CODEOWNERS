@@ -6,4 +6,4 @@
 /go.sum @iarunsaragadam
 /quota/ @iarunsaragadam
 /gen/ @iarunsaragadam
-/internal/redisstore/scripts/ @iarunsaragadam
+/ratelimiterserver/backend/redis/scripts/ @iarunsaragadam

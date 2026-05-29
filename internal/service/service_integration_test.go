@@ -17,7 +17,7 @@ import (
 	"github.com/elloloop/rate-limiter/internal/config"
 	"github.com/elloloop/rate-limiter/internal/events"
 	"github.com/elloloop/rate-limiter/internal/metrics"
-	"github.com/elloloop/rate-limiter/internal/redisstore"
+	rlredis "github.com/elloloop/rate-limiter/ratelimiterserver/backend/redis"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
@@ -151,7 +151,7 @@ func TestConsumeConcurrentContentionUsesRedisAtomicity(t *testing.T) {
 func TestRedisScriptsReloadAfterScriptFlushWithRedis(t *testing.T) {
 	ctx, svc, store := newRedisBackedService(t)
 
-	if err := store.Client().ScriptFlush(ctx).Err(); err != nil {
+	if err := store.FlushScripts(ctx); err != nil {
 		t.Fatalf("script flush: %v", err)
 	}
 
@@ -871,7 +871,7 @@ func TestGRPCRoundTripWithRedis(t *testing.T) {
 	}
 }
 
-func newRedisBackedService(t *testing.T) (context.Context, *QuotaService, *redisstore.Store) {
+func newRedisBackedService(t *testing.T) (context.Context, *QuotaService, *rlredis.Backend) {
 	t.Helper()
 	redisURL := os.Getenv("QUOTA_TEST_REDIS_URL")
 	if redisURL == "" {
@@ -879,12 +879,12 @@ func newRedisBackedService(t *testing.T) (context.Context, *QuotaService, *redis
 	}
 
 	ctx := context.Background()
-	store, err := redisstore.New(ctx, redisURL)
+	store, err := rlredis.New(ctx, redisURL)
 	if err != nil {
 		t.Fatalf("new redis store: %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	if err := store.Client().FlushDB(ctx).Err(); err != nil {
+	if err := store.FlushAll(ctx); err != nil {
 		t.Fatalf("flush redis: %v", err)
 	}
 

@@ -6,11 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"strconv"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -20,7 +18,7 @@ import (
 	"github.com/elloloop/rate-limiter/internal/keys"
 	"github.com/elloloop/rate-limiter/internal/limits"
 	"github.com/elloloop/rate-limiter/internal/metrics"
-	"github.com/elloloop/rate-limiter/internal/redisstore"
+	rlredis "github.com/elloloop/rate-limiter/ratelimiterserver/backend/redis"
 )
 
 type QuotaService struct {
@@ -28,13 +26,13 @@ type QuotaService struct {
 
 	cfg     config.Config
 	prefix  string
-	store   *redisstore.Store
+	store   *rlredis.Backend
 	events  events.Sink
 	metrics *metrics.Metrics
 	logger  *slog.Logger
 }
 
-func New(cfg config.Config, store *redisstore.Store, eventSink events.Sink, m *metrics.Metrics, logger *slog.Logger) *QuotaService {
+func New(cfg config.Config, store *rlredis.Backend, eventSink events.Sink, m *metrics.Metrics, logger *slog.Logger) *QuotaService {
 	return &QuotaService{
 		cfg:     cfg,
 		prefix:  keys.Prefix(cfg.Environment, cfg.Product),
@@ -410,7 +408,7 @@ func (s *QuotaService) GetReservation(ctx context.Context, req *quotav1.GetReser
 		return nil, status.Error(codes.InvalidArgument, "reservation_id is required")
 	}
 	res, err := s.store.GetReservation(ctx, keys.Reservation(s.prefix, req.GetReservationId()))
-	if errors.Is(err, redis.Nil) {
+	if errors.Is(err, rlredis.ErrNotFound) {
 		return nil, status.Error(codes.NotFound, "reservation not found")
 	}
 	if err != nil {
@@ -424,7 +422,7 @@ func (s *QuotaService) GetLease(ctx context.Context, req *quotav1.GetLeaseReques
 		return nil, status.Error(codes.InvalidArgument, "lease_id is required")
 	}
 	lease, err := s.store.GetLease(ctx, keys.Lease(s.prefix, req.GetLeaseId()))
-	if errors.Is(err, redis.Nil) {
+	if errors.Is(err, rlredis.ErrNotFound) {
 		return nil, status.Error(codes.NotFound, "lease not found")
 	}
 	if err != nil {
@@ -435,31 +433,28 @@ func (s *QuotaService) GetLease(ctx context.Context, req *quotav1.GetLeaseReques
 
 func (s *QuotaService) GetRedisStatus(ctx context.Context, _ *quotav1.GetRedisStatusRequest) (*quotav1.RedisStatus, error) {
 	start := time.Now()
-	if err := s.store.Client().Ping(ctx).Err(); err != nil {
-		return &quotav1.RedisStatus{Reachable: false, Mode: s.cfg.RedisMode, LatencyMs: time.Since(start).Milliseconds(), Message: err.Error()}, nil
+	latency := func() int64 { return time.Since(start).Milliseconds() }
+	if err := s.store.Ping(ctx); err != nil {
+		return &quotav1.RedisStatus{Reachable: false, Mode: s.cfg.RedisMode, LatencyMs: latency(), Message: err.Error()}, nil
 	}
-	exists, err := s.store.Client().ScriptExists(ctx, s.store.ScriptSHAs()...).Result()
+	loaded, err := s.store.ScriptsLoaded(ctx)
 	if err != nil {
-		return &quotav1.RedisStatus{Reachable: false, Mode: s.cfg.RedisMode, LatencyMs: time.Since(start).Milliseconds(), Message: err.Error()}, nil
+		return &quotav1.RedisStatus{Reachable: false, Mode: s.cfg.RedisMode, LatencyMs: latency(), Message: err.Error()}, nil
 	}
-	for _, ok := range exists {
-		if !ok {
-			if err := s.store.LoadScripts(ctx); err != nil {
-				return &quotav1.RedisStatus{Reachable: true, Mode: s.cfg.RedisMode, LatencyMs: time.Since(start).Milliseconds(), Message: "reload Redis scripts: " + err.Error()}, nil
-			}
-			reloaded, err := s.store.Client().ScriptExists(ctx, s.store.ScriptSHAs()...).Result()
-			if err != nil {
-				return &quotav1.RedisStatus{Reachable: false, Mode: s.cfg.RedisMode, LatencyMs: time.Since(start).Milliseconds(), Message: err.Error()}, nil
-			}
-			for _, loaded := range reloaded {
-				if !loaded {
-					return &quotav1.RedisStatus{Reachable: true, Mode: s.cfg.RedisMode, LatencyMs: time.Since(start).Milliseconds(), Message: "one or more Redis scripts are not loaded"}, nil
-				}
-			}
-			break
-		}
+	if loaded {
+		return &quotav1.RedisStatus{Reachable: true, Mode: s.cfg.RedisMode, LatencyMs: latency(), Message: "ok"}, nil
 	}
-	return &quotav1.RedisStatus{Reachable: true, Mode: s.cfg.RedisMode, LatencyMs: time.Since(start).Milliseconds(), Message: "ok"}, nil
+	if err := s.store.LoadScripts(ctx); err != nil {
+		return &quotav1.RedisStatus{Reachable: true, Mode: s.cfg.RedisMode, LatencyMs: latency(), Message: "reload Redis scripts: " + err.Error()}, nil
+	}
+	reloaded, err := s.store.ScriptsLoaded(ctx)
+	if err != nil {
+		return &quotav1.RedisStatus{Reachable: false, Mode: s.cfg.RedisMode, LatencyMs: latency(), Message: err.Error()}, nil
+	}
+	if !reloaded {
+		return &quotav1.RedisStatus{Reachable: true, Mode: s.cfg.RedisMode, LatencyMs: latency(), Message: "one or more Redis scripts are not loaded"}, nil
+	}
+	return &quotav1.RedisStatus{Reachable: true, Mode: s.cfg.RedisMode, LatencyMs: latency(), Message: "ok"}, nil
 }
 
 func (s *QuotaService) ExpireReservations(ctx context.Context, batchSize int64) (int64, error) {
@@ -477,7 +472,7 @@ func (s *QuotaService) ExpireReservations(ctx context.Context, batchSize int64) 
 	return result.Expired, nil
 }
 
-func (s *QuotaService) newReservation(req *quotav1.ReserveRequest, ops []redisstore.LimitOp, now time.Time) *quotav1.Reservation {
+func (s *QuotaService) newReservation(req *quotav1.ReserveRequest, ops []rlredis.LimitOp, now time.Time) *quotav1.Reservation {
 	impacts := make([]*quotav1.ReservationImpact, 0, len(req.GetLimits()))
 	for i, limit := range req.GetLimits() {
 		impacts = append(impacts, &quotav1.ReservationImpact{
@@ -508,7 +503,7 @@ func (s *QuotaService) newReservation(req *quotav1.ReserveRequest, ops []redisst
 	}
 }
 
-func (s *QuotaService) newLease(req *quotav1.AcquireLeaseRequest, ops []redisstore.LimitOp, now time.Time) *quotav1.Lease {
+func (s *QuotaService) newLease(req *quotav1.AcquireLeaseRequest, ops []rlredis.LimitOp, now time.Time) *quotav1.Lease {
 	impacts := make([]*quotav1.LeaseImpact, 0, len(req.GetLimits()))
 	for i, limit := range req.GetLimits() {
 		impacts = append(impacts, &quotav1.LeaseImpact{
@@ -528,10 +523,10 @@ func (s *QuotaService) newLease(req *quotav1.AcquireLeaseRequest, ops []redissto
 	}
 }
 
-func (s *QuotaService) buildLimitOps(limits []*quotav1.Limit, cost int64, now time.Time, concurrencyOnly bool) ([]redisstore.LimitOp, error) {
-	ops := make([]redisstore.LimitOp, 0, len(limits))
+func (s *QuotaService) buildLimitOps(limits []*quotav1.Limit, cost int64, now time.Time, concurrencyOnly bool) ([]rlredis.LimitOp, error) {
+	ops := make([]rlredis.LimitOp, 0, len(limits))
 	for _, limit := range limits {
-		op := redisstore.LimitOp{
+		op := rlredis.LimitOp{
 			LimitID:          limit.GetLimitId(),
 			Limit:            limit.GetLimit(),
 			Cost:             cost,
@@ -670,7 +665,7 @@ func (s *QuotaService) currentUsage(ctx context.Context, supplied []*quotav1.Lim
 			status.Remaining = remaining
 			status.RetryAfterMs = retry
 		case quotav1.Algorithm_ALGORITHM_CONCURRENCY:
-			active, err := s.store.Client().ZCount(ctx, keys.LeaseSet(s.prefix, limit), strconv.FormatInt(now.UnixMilli(), 10), "+inf").Result()
+			active, err := s.store.ConcurrencyCount(ctx, keys.LeaseSet(s.prefix, limit), now)
 			if err != nil {
 				return nil, err
 			}
@@ -685,11 +680,7 @@ func (s *QuotaService) currentUsage(ctx context.Context, supplied []*quotav1.Lim
 }
 
 func (s *QuotaService) intValue(ctx context.Context, key string) (int64, error) {
-	value, err := s.store.Client().Get(ctx, key).Int64()
-	if errors.Is(err, redis.Nil) {
-		return 0, nil
-	}
-	return value, err
+	return s.store.CounterValue(ctx, key)
 }
 
 func (s *QuotaService) bucketUsage(ctx context.Context, key string, limit *quotav1.Limit, now time.Time) (int64, int64, error) {
@@ -697,17 +688,17 @@ func (s *QuotaService) bucketUsage(ctx context.Context, key string, limit *quota
 	if capacity <= 0 {
 		capacity = limit.GetLimit()
 	}
-	fields, err := s.store.Client().HMGet(ctx, key, "tokens", "last_refill_ms").Result()
+	state, err := s.store.BucketState(ctx, key)
 	if err != nil {
 		return 0, 0, err
 	}
 	tokens := float64(capacity)
 	lastRefill := now.UnixMilli()
-	if fields[0] != nil {
-		_, _ = fmt.Sscan(fmt.Sprint(fields[0]), &tokens)
-	}
-	if fields[1] != nil {
-		_, _ = fmt.Sscan(fmt.Sprint(fields[1]), &lastRefill)
+	if state.Exists {
+		tokens = state.Tokens
+		if state.LastRefillMs != 0 {
+			lastRefill = state.LastRefillMs
+		}
 	}
 	elapsed := float64(maxInt64(0, now.UnixMilli()-lastRefill)) / 1000
 	available := math.Min(float64(capacity), tokens+(elapsed*limit.GetRefillRatePerSec()))
@@ -715,12 +706,12 @@ func (s *QuotaService) bucketUsage(ctx context.Context, key string, limit *quota
 }
 
 func (s *QuotaService) gcraUsage(ctx context.Context, key string, limit *quotav1.Limit, now time.Time) (int64, int64, error) {
-	raw, err := s.store.Client().Get(ctx, key).Float64()
-	if errors.Is(err, redis.Nil) {
-		return 1, 0, nil
-	}
+	raw, ok, err := s.store.GCRAValue(ctx, key)
 	if err != nil {
 		return 0, 0, err
+	}
+	if !ok {
+		return 1, 0, nil
 	}
 	burst := limit.GetBurst()
 	if burst <= 0 {
@@ -734,7 +725,7 @@ func (s *QuotaService) gcraUsage(ctx context.Context, key string, limit *quotav1
 	return 1, 0, nil
 }
 
-func (s *QuotaService) decisionFromResult(result redisstore.DecisionResult, supplied []*quotav1.Limit, cost int64, dryRun bool, op string) *quotav1.Decision {
+func (s *QuotaService) decisionFromResult(result rlredis.DecisionResult, supplied []*quotav1.Limit, cost int64, dryRun bool, op string) *quotav1.Decision {
 	reason := quotav1.DecisionReason_DECISION_REASON_ALLOWED
 	message := "allowed"
 	if !result.Allowed {
@@ -798,7 +789,7 @@ func (s *QuotaService) decisionFromResult(result redisstore.DecisionResult, supp
 	}
 }
 
-func (s *QuotaService) decisionFromReservationIncrement(result redisstore.DecisionResult, reservation *quotav1.Reservation, cost int64) *quotav1.Decision {
+func (s *QuotaService) decisionFromReservationIncrement(result rlredis.DecisionResult, reservation *quotav1.Reservation, cost int64) *quotav1.Decision {
 	reason := quotav1.DecisionReason_DECISION_REASON_ALLOWED
 	message := "reservation incremented"
 	if result.Message != "" {
