@@ -58,6 +58,9 @@ func New(_ context.Context, opts Options) (*Server, error) {
 	if opts.Backend == nil {
 		return nil, errors.New("ratelimiterserver: Options.Backend is required")
 	}
+	if opts.RedisMode != "" && opts.RedisMode != "single_primary" {
+		return nil, fmt.Errorf("ratelimiterserver: Options.RedisMode=%q is unsupported in v0.4.0; use \"single_primary\" or leave empty", opts.RedisMode)
+	}
 
 	redisMode := opts.RedisMode
 	if redisMode == "" {
