@@ -108,6 +108,59 @@ bundle (`.tar.gz` / `.zip` + `.sha256`) containing `quota/`, `buf.yaml`, and
 `buf.gen.yaml`. Codegen against that pinned contract instead of vendoring a git
 ref.
 
+## Library mode (embedding)
+
+Go programs that prefer one process to two can mount the rate-limiter into
+their own `*grpc.Server` instead of running the dedicated container. The
+`ratelimiterserver` package exposes a constructor that returns a
+`quotav1.QuotaServiceServer`:
+
+```go
+import (
+    "context"
+    "log"
+    "net"
+
+    "google.golang.org/grpc"
+
+    quotav1 "github.com/elloloop/rate-limiter/gen/quota/v1"
+    "github.com/elloloop/rate-limiter/ratelimiterserver"
+    rlredis "github.com/elloloop/rate-limiter/ratelimiterserver/backend/redis"
+)
+
+func main() {
+    ctx := context.Background()
+
+    backend, err := rlredis.New(ctx, "redis://localhost:6379/0")
+    if err != nil { log.Fatal(err) }
+    defer backend.Close()
+
+    rl, err := ratelimiterserver.New(ctx, ratelimiterserver.Options{
+        Product:     "myapp",
+        Environment: "prod",
+        Backend:     backend,
+    })
+    if err != nil { log.Fatal(err) }
+
+    g := grpc.NewServer()
+    quotav1.RegisterQuotaServiceServer(g, rl)
+    lis, _ := net.Listen("tcp", ":8080")
+    g.Serve(lis)
+}
+```
+
+A runnable end-to-end example lives in `examples/embedded`; see its package
+doc for the env vars it accepts. `cmd/quota-service` is itself a thin shim
+over `ratelimiterserver.New`, so embedded and container modes share one
+service-layer wiring.
+
+**Backends** — v0.4.0 ships exactly one backend (Redis); the algorithms
+depend on Redis Lua atomicity. The `ratelimiterserver/backend.Backend`
+interface keeps the door open for future drivers without breaking the
+`Server` / `Options` shape. The smallest supported "minimal" deployment
+is the embedded application plus a real Redis instance — there is no
+in-memory backend.
+
 ## Documentation
 
 The docs site is published through GitHub Pages:
