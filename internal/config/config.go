@@ -90,13 +90,22 @@ func redactURL(raw string) string {
 		}
 	}
 	query := parsed.Query()
-	for _, key := range []string{"password", "pass", "token", "apikey", "api_key"} {
-		if query.Has(key) {
+	for key := range query {
+		if redactedQueryKey(key) {
 			query.Set(key, "xxxxx")
 		}
 	}
 	parsed.RawQuery = query.Encode()
 	return parsed.String()
+}
+
+func redactedQueryKey(key string) bool {
+	switch strings.ToLower(key) {
+	case "password", "pass", "token", "apikey", "api_key":
+		return true
+	default:
+		return false
+	}
 }
 
 func env(key, fallback string) string {

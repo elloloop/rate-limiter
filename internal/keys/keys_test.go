@@ -51,6 +51,53 @@ func TestFixedCalendarWeekUsesISOWeek(t *testing.T) {
 	}
 }
 
+func TestFixedCalendarMinuteHourAndMonthWindows(t *testing.T) {
+	tests := []struct {
+		name        string
+		unit        quotav1.CalendarUnit
+		now         time.Time
+		wantSuffix  string
+		wantResetMS int64
+	}{
+		{
+			name:        "minute",
+			unit:        quotav1.CalendarUnit_CALENDAR_UNIT_MINUTE,
+			now:         time.Date(2026, 5, 17, 12, 34, 56, 0, time.UTC),
+			wantSuffix:  ":20260517T1234",
+			wantResetMS: time.Date(2026, 5, 17, 12, 35, 0, 0, time.UTC).UnixMilli(),
+		},
+		{
+			name:        "hour",
+			unit:        quotav1.CalendarUnit_CALENDAR_UNIT_HOUR,
+			now:         time.Date(2026, 5, 17, 12, 34, 56, 0, time.UTC),
+			wantSuffix:  ":20260517T12",
+			wantResetMS: time.Date(2026, 5, 17, 13, 0, 0, 0, time.UTC).UnixMilli(),
+		},
+		{
+			name:        "month",
+			unit:        quotav1.CalendarUnit_CALENDAR_UNIT_MONTH,
+			now:         time.Date(2026, 2, 27, 12, 0, 0, 0, time.UTC),
+			wantSuffix:  ":202602",
+			wantResetMS: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC).UnixMilli(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key, reset, ttl := FixedWindow(Prefix("prod", "workspace"), calendarLimit(tt.unit), tt.now)
+			if !strings.HasSuffix(key, tt.wantSuffix) {
+				t.Fatalf("window key = %q, want suffix %q", key, tt.wantSuffix)
+			}
+			if reset.UnixMilli() != tt.wantResetMS {
+				t.Fatalf("reset = %d, want %d", reset.UnixMilli(), tt.wantResetMS)
+			}
+			if ttl <= time.Hour {
+				t.Fatalf("ttl should extend past reset, got %s", ttl)
+			}
+		})
+	}
+}
+
 func TestDurationWindowUsesEpochBucket(t *testing.T) {
 	limit := &quotav1.Limit{
 		LimitId:  "per_minute",
@@ -97,6 +144,47 @@ func TestSlidingBucketsIncludeActiveWindowAndCurrentWriteKey(t *testing.T) {
 	}
 	if ttl <= 10*time.Second {
 		t.Fatalf("ttl should exceed sliding duration, got %s", ttl)
+	}
+}
+
+func TestSlidingBucketsDefaultBucketCountAndMinimumBucketSize(t *testing.T) {
+	limit := &quotav1.Limit{
+		LimitId:  "tiny",
+		ScopeKey: "scope:tiny",
+		Window: &quotav1.Window{
+			Type:        quotav1.WindowType_WINDOW_TYPE_SLIDING,
+			DurationMs:  5,
+			BucketCount: 10,
+		},
+	}
+	readKeys, writeKey, reset, ttl := SlidingBuckets(Prefix("local", "tiny"), limit, time.UnixMilli(12))
+
+	if len(readKeys) != 5 {
+		t.Fatalf("expected one key per millisecond in active window, got %d: %v", len(readKeys), readKeys)
+	}
+	if writeKey != readKeys[len(readKeys)-1] {
+		t.Fatalf("current bucket should be write key")
+	}
+	if reset.UnixMilli() != 13 {
+		t.Fatalf("reset mismatch: got %d want 13", reset.UnixMilli())
+	}
+	if ttl != time.Hour+6*time.Millisecond {
+		t.Fatalf("ttl mismatch: got %s", ttl)
+	}
+}
+
+func TestSlidingBucketsUsesDefaultCountWhenUnset(t *testing.T) {
+	limit := &quotav1.Limit{
+		LimitId:  "default_count",
+		ScopeKey: "scope:default_count",
+		Window: &quotav1.Window{
+			Type:       quotav1.WindowType_WINDOW_TYPE_SLIDING,
+			DurationMs: 1000,
+		},
+	}
+	readKeys, _, _, _ := SlidingBuckets(Prefix("local", "defaults"), limit, time.UnixMilli(1000))
+	if len(readKeys) != 10 {
+		t.Fatalf("expected default 10 active buckets, got %d: %v", len(readKeys), readKeys)
 	}
 }
 

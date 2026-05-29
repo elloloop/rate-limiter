@@ -392,6 +392,9 @@ func (s *Server) RenewLease(ctx context.Context, req *quotav1.RenewLeaseRequest)
 	if !result.Found {
 		return nil, status.Error(codes.NotFound, "lease not found")
 	}
+	if !result.Renewed {
+		return nil, status.Error(codes.FailedPrecondition, "lease is not active")
+	}
 	return &quotav1.RenewLeaseResponse{Lease: result.Lease, Renewed: result.Renewed}, nil
 }
 
@@ -420,6 +423,21 @@ func (s *Server) ReleaseLease(ctx context.Context, req *quotav1.ReleaseLeaseRequ
 }
 
 func (s *Server) Explain(ctx context.Context, req *quotav1.ExplainRequest) (*quotav1.ExplainResponse, error) {
+	if req.GetCost() <= 0 {
+		return &quotav1.ExplainResponse{
+			WouldAllow: false,
+			Reason:     quotav1.DecisionReason_DECISION_REASON_INVALID_REQUEST,
+			Message:    "cost must be greater than zero",
+			Evaluations: []*quotav1.LimitEvaluation{{
+				Valid:      false,
+				WouldAllow: false,
+				ValidationErrors: []*quotav1.ValidationError{{
+					Field:   "cost",
+					Message: "must be greater than zero",
+				}},
+			}},
+		}, nil
+	}
 	errs, warnings := limits.Validate(req.GetAction(), req.GetLimits())
 	if len(errs) > 0 {
 		return &quotav1.ExplainResponse{
@@ -852,17 +870,15 @@ func (s *Server) decisionFromResult(result backend.DecisionResult, supplied []*q
 func (s *Server) decisionFromReservationIncrement(result backend.DecisionResult, reservation *quotav1.Reservation, cost int64) *quotav1.Decision {
 	reason := quotav1.DecisionReason_DECISION_REASON_ALLOWED
 	message := "reservation incremented"
-	if result.Message != "" {
-		message = result.Message
-	}
 	if !result.Allowed {
 		reason = quotav1.DecisionReason_DECISION_REASON_LIMIT_EXCEEDED
+		message = "increment reservation denied"
 		if len(result.Statuses) == 0 {
 			reason = quotav1.DecisionReason_DECISION_REASON_INVALID_REQUEST
 		}
-		if message == "" {
-			message = "increment reservation denied"
-		}
+	}
+	if result.Message != "" {
+		message = result.Message
 	}
 
 	statuses := make([]*quotav1.LimitStatus, 0, len(result.Statuses))
