@@ -15,6 +15,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	quotav1 "github.com/elloloop/rate-limiter/gen/quota/v1"
+	"github.com/elloloop/rate-limiter/ratelimiterserver/backend"
 )
 
 //go:embed scripts/*.lua
@@ -36,132 +37,12 @@ const (
 )
 
 // Backend is the Redis-backed implementation of the
-// ratelimiterserver Backend interface. Construct it with [New].
+// backend.Backend interface. Construct it with [New].
 type Backend struct {
 	client       *redisclient.Client
 	mu           sync.RWMutex
 	scripts      map[string]string
 	scriptBodies map[string]string
-}
-
-type LimitOp struct {
-	LimitID          string   `json:"limit_id"`
-	Kind             string   `json:"kind"`
-	ReadKeys         []string `json:"read_keys"`
-	WriteKey         string   `json:"write_key"`
-	Limit            int64    `json:"limit"`
-	Cost             int64    `json:"cost"`
-	ResetAtUnixMs    int64    `json:"reset_at_unix_ms"`
-	TTLMS            int64    `json:"ttl_ms"`
-	Burst            int64    `json:"burst"`
-	RefillRatePerSec float64  `json:"refill_rate_per_sec"`
-}
-
-type ScriptStatus struct {
-	LimitID      string `json:"limit_id"`
-	Used         int64  `json:"used"`
-	Remaining    int64  `json:"remaining"`
-	RetryAfterMS int64  `json:"retry_after_ms"`
-	Allowed      bool   `json:"allowed"`
-	Message      string `json:"message"`
-}
-
-type DecisionResult struct {
-	Cached        bool           `json:"cached"`
-	DecisionID    string         `json:"decision_id"`
-	Allowed       bool           `json:"allowed"`
-	DryRun        bool           `json:"dry_run"`
-	ReservationID string         `json:"reservation_id"`
-	LeaseID       string         `json:"lease_id"`
-	RetryAfterMS  int64          `json:"retry_after_ms"`
-	Statuses      []ScriptStatus `json:"statuses"`
-	Message       string         `json:"message"`
-}
-
-func (d *DecisionResult) UnmarshalJSON(data []byte) error {
-	var raw struct {
-		Cached        bool            `json:"cached"`
-		DecisionID    string          `json:"decision_id"`
-		Allowed       bool            `json:"allowed"`
-		DryRun        bool            `json:"dry_run"`
-		ReservationID string          `json:"reservation_id"`
-		LeaseID       string          `json:"lease_id"`
-		RetryAfterMS  int64           `json:"retry_after_ms"`
-		Statuses      json.RawMessage `json:"statuses"`
-		Message       string          `json:"message"`
-	}
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	*d = DecisionResult{
-		Cached:        raw.Cached,
-		DecisionID:    raw.DecisionID,
-		Allowed:       raw.Allowed,
-		DryRun:        raw.DryRun,
-		ReservationID: raw.ReservationID,
-		LeaseID:       raw.LeaseID,
-		RetryAfterMS:  raw.RetryAfterMS,
-		Message:       raw.Message,
-	}
-	statuses := strings.TrimSpace(string(raw.Statuses))
-	if statuses == "" || statuses == "null" || statuses == "{}" {
-		return nil
-	}
-	return json.Unmarshal(raw.Statuses, &d.Statuses)
-}
-
-type IncrementReservationResult struct {
-	Cached       bool                 `json:"cached"`
-	Found        bool                 `json:"found"`
-	Active       bool                 `json:"active"`
-	ReservedCost int64                `json:"reserved_cost"`
-	Decision     DecisionResult       `json:"decision"`
-	Reservation  *quotav1.Reservation `json:"-"`
-	raw          json.RawMessage
-}
-
-type FinalizeResult struct {
-	Cached       bool                 `json:"cached"`
-	Found        bool                 `json:"found"`
-	Finalized    bool                 `json:"finalized"`
-	ReservedCost int64                `json:"reserved_cost"`
-	ActualCost   int64                `json:"actual_cost"`
-	RefundedCost int64                `json:"refunded_cost"`
-	OverageCost  int64                `json:"overage_cost"`
-	Reservation  *quotav1.Reservation `json:"-"`
-	raw          json.RawMessage
-}
-
-type ReleaseReservationResult struct {
-	Cached       bool                 `json:"cached"`
-	Found        bool                 `json:"found"`
-	Released     bool                 `json:"released"`
-	ReleasedCost int64                `json:"released_cost"`
-	Reservation  *quotav1.Reservation `json:"-"`
-	raw          json.RawMessage
-}
-
-type LeaseResult struct {
-	Cached   bool           `json:"cached"`
-	Found    bool           `json:"found"`
-	Renewed  bool           `json:"renewed"`
-	Released bool           `json:"released"`
-	Lease    *quotav1.Lease `json:"-"`
-	raw      json.RawMessage
-}
-
-type ExpireReservationsResult struct {
-	Expired int64 `json:"expired"`
-	Scanned int64 `json:"scanned"`
-}
-
-// BucketState reports the persisted token / leak state of a bucket
-// algorithm key. Tokens and LastRefillMs are zero when the key does
-// not yet exist; callers treat that as a full bucket.
-type BucketState struct {
-	Tokens       float64
-	LastRefillMs int64
-	Exists       bool
 }
 
 // New dials Redis at dsn, pings to confirm reachability, and
@@ -179,12 +60,12 @@ func New(ctx context.Context, dsn string) (*Backend, error) {
 		_ = client.Close()
 		return nil, fmt.Errorf("ping redis: %w", err)
 	}
-	backend := &Backend{client: client, scripts: map[string]string{}, scriptBodies: map[string]string{}}
-	if err := backend.LoadScripts(ctx); err != nil {
+	b := &Backend{client: client, scripts: map[string]string{}, scriptBodies: map[string]string{}}
+	if err := b.LoadScripts(ctx); err != nil {
 		_ = client.Close()
 		return nil, err
 	}
-	return backend, nil
+	return b, nil
 }
 
 func (b *Backend) Close() error {
@@ -234,16 +115,10 @@ func (b *Backend) LoadScripts(ctx context.Context) error {
 	return nil
 }
 
-// Ping reports whether Redis is reachable. It is used by the
-// ratelimiterserver health probe and the GetRedisStatus RPC.
 func (b *Backend) Ping(ctx context.Context) error {
 	return b.client.Ping(ctx).Err()
 }
 
-// ScriptsLoaded checks that every script New uploaded is still
-// present server-side. A reply with any false entry indicates a
-// SCRIPT FLUSH (or a failover to a replica that never saw the
-// scripts); the caller should re-run LoadScripts.
 func (b *Backend) ScriptsLoaded(ctx context.Context) (bool, error) {
 	b.mu.RLock()
 	shas := make([]string, 0, len(b.scripts))
@@ -266,10 +141,10 @@ func (b *Backend) ScriptsLoaded(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-func (b *Backend) Consume(ctx context.Context, idemKey string, now time.Time, ops []LimitOp, dryRun bool, decisionID string) (DecisionResult, error) {
+func (b *Backend) Consume(ctx context.Context, idemKey string, now time.Time, ops []backend.LimitOp, dryRun bool, decisionID string) (backend.DecisionResult, error) {
 	args, err := json.Marshal(ops)
 	if err != nil {
-		return DecisionResult{}, err
+		return backend.DecisionResult{}, err
 	}
 	raw, err := b.evalText(ctx, scriptConsume, nil,
 		idemKey,
@@ -280,19 +155,19 @@ func (b *Backend) Consume(ctx context.Context, idemKey string, now time.Time, op
 		decisionID,
 	)
 	if err != nil {
-		return DecisionResult{}, err
+		return backend.DecisionResult{}, err
 	}
 	return parseDecision(raw)
 }
 
-func (b *Backend) Reserve(ctx context.Context, idemKey string, now time.Time, ops []LimitOp, dryRun bool, reservationKey, reservationExpiryIndexKey string, reservation *quotav1.Reservation, decisionID string) (DecisionResult, error) {
+func (b *Backend) Reserve(ctx context.Context, idemKey string, now time.Time, ops []backend.LimitOp, dryRun bool, reservationKey, reservationExpiryIndexKey string, reservation *quotav1.Reservation, decisionID string) (backend.DecisionResult, error) {
 	args, err := json.Marshal(ops)
 	if err != nil {
-		return DecisionResult{}, err
+		return backend.DecisionResult{}, err
 	}
 	reservationJSON, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(reservation)
 	if err != nil {
-		return DecisionResult{}, err
+		return backend.DecisionResult{}, err
 	}
 	ttl := time.Until(time.UnixMilli(reservation.GetExpiresAtUnixMs())) + defaultReservationExtraTTL
 	if ttl < defaultReservationExtraTTL {
@@ -311,12 +186,12 @@ func (b *Backend) Reserve(ctx context.Context, idemKey string, now time.Time, op
 		decisionID,
 	)
 	if err != nil {
-		return DecisionResult{}, err
+		return backend.DecisionResult{}, err
 	}
 	return parseDecision(raw)
 }
 
-func (b *Backend) IncrementReservation(ctx context.Context, idemKey, reservationKey, reservationExpiryIndexKey string, deltaCost int64, now time.Time, decisionID string) (IncrementReservationResult, error) {
+func (b *Backend) IncrementReservation(ctx context.Context, idemKey, reservationKey, reservationExpiryIndexKey string, deltaCost int64, now time.Time, decisionID string) (backend.IncrementReservationResult, error) {
 	raw, err := b.evalText(ctx, scriptIncrementReservation, nil,
 		idemKey,
 		millis(defaultIdempotencyTTL),
@@ -327,37 +202,36 @@ func (b *Backend) IncrementReservation(ctx context.Context, idemKey, reservation
 		decisionID,
 	)
 	if err != nil {
-		return IncrementReservationResult{}, err
+		return backend.IncrementReservationResult{}, err
 	}
 	var envelope struct {
-		Cached       bool            `json:"cached"`
-		Found        bool            `json:"found"`
-		Active       bool            `json:"active"`
-		ReservedCost int64           `json:"reserved_cost"`
-		Decision     DecisionResult  `json:"decision"`
-		Reservation  json.RawMessage `json:"reservation"`
+		Cached       bool                   `json:"cached"`
+		Found        bool                   `json:"found"`
+		Active       bool                   `json:"active"`
+		ReservedCost int64                  `json:"reserved_cost"`
+		Decision     backend.DecisionResult `json:"decision"`
+		Reservation  json.RawMessage        `json:"reservation"`
 	}
 	if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
-		return IncrementReservationResult{}, err
+		return backend.IncrementReservationResult{}, err
 	}
-	result := IncrementReservationResult{
+	result := backend.IncrementReservationResult{
 		Cached:       envelope.Cached,
 		Found:        envelope.Found,
 		Active:       envelope.Active,
 		ReservedCost: envelope.ReservedCost,
 		Decision:     envelope.Decision,
-		raw:          envelope.Reservation,
 	}
 	if len(envelope.Reservation) > 0 {
 		result.Reservation = &quotav1.Reservation{}
 		if err := protojson.Unmarshal(envelope.Reservation, result.Reservation); err != nil {
-			return IncrementReservationResult{}, err
+			return backend.IncrementReservationResult{}, err
 		}
 	}
 	return result, nil
 }
 
-func (b *Backend) FinalizeReservation(ctx context.Context, idemKey, reservationKey, reservationExpiryIndexKey string, actualCost int64, now time.Time) (FinalizeResult, error) {
+func (b *Backend) FinalizeReservation(ctx context.Context, idemKey, reservationKey, reservationExpiryIndexKey string, actualCost int64, now time.Time) (backend.FinalizeResult, error) {
 	raw, err := b.evalText(ctx, scriptFinalizeReservation, nil,
 		idemKey,
 		millis(defaultIdempotencyTTL),
@@ -367,7 +241,7 @@ func (b *Backend) FinalizeReservation(ctx context.Context, idemKey, reservationK
 		now.UnixMilli(),
 	)
 	if err != nil {
-		return FinalizeResult{}, err
+		return backend.FinalizeResult{}, err
 	}
 	var envelope struct {
 		Cached       bool            `json:"cached"`
@@ -380,9 +254,9 @@ func (b *Backend) FinalizeReservation(ctx context.Context, idemKey, reservationK
 		Reservation  json.RawMessage `json:"reservation"`
 	}
 	if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
-		return FinalizeResult{}, err
+		return backend.FinalizeResult{}, err
 	}
-	result := FinalizeResult{
+	result := backend.FinalizeResult{
 		Cached:       envelope.Cached,
 		Found:        envelope.Found,
 		Finalized:    envelope.Finalized,
@@ -390,18 +264,17 @@ func (b *Backend) FinalizeReservation(ctx context.Context, idemKey, reservationK
 		ActualCost:   envelope.ActualCost,
 		RefundedCost: envelope.RefundedCost,
 		OverageCost:  envelope.OverageCost,
-		raw:          envelope.Reservation,
 	}
 	if len(envelope.Reservation) > 0 {
 		result.Reservation = &quotav1.Reservation{}
 		if err := protojson.Unmarshal(envelope.Reservation, result.Reservation); err != nil {
-			return FinalizeResult{}, err
+			return backend.FinalizeResult{}, err
 		}
 	}
 	return result, nil
 }
 
-func (b *Backend) ReleaseReservation(ctx context.Context, idemKey, reservationKey, reservationExpiryIndexKey string, now time.Time) (ReleaseReservationResult, error) {
+func (b *Backend) ReleaseReservation(ctx context.Context, idemKey, reservationKey, reservationExpiryIndexKey string, now time.Time) (backend.ReleaseReservationResult, error) {
 	raw, err := b.evalText(ctx, scriptReleaseReservation, nil,
 		idemKey,
 		millis(defaultIdempotencyTTL),
@@ -410,7 +283,7 @@ func (b *Backend) ReleaseReservation(ctx context.Context, idemKey, reservationKe
 		now.UnixMilli(),
 	)
 	if err != nil {
-		return ReleaseReservationResult{}, err
+		return backend.ReleaseReservationResult{}, err
 	}
 	var envelope struct {
 		Cached       bool            `json:"cached"`
@@ -420,48 +293,47 @@ func (b *Backend) ReleaseReservation(ctx context.Context, idemKey, reservationKe
 		Reservation  json.RawMessage `json:"reservation"`
 	}
 	if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
-		return ReleaseReservationResult{}, err
+		return backend.ReleaseReservationResult{}, err
 	}
-	result := ReleaseReservationResult{
+	result := backend.ReleaseReservationResult{
 		Cached:       envelope.Cached,
 		Found:        envelope.Found,
 		Released:     envelope.Released,
 		ReleasedCost: envelope.ReleasedCost,
-		raw:          envelope.Reservation,
 	}
 	if len(envelope.Reservation) > 0 {
 		result.Reservation = &quotav1.Reservation{}
 		if err := protojson.Unmarshal(envelope.Reservation, result.Reservation); err != nil {
-			return ReleaseReservationResult{}, err
+			return backend.ReleaseReservationResult{}, err
 		}
 	}
 	return result, nil
 }
 
-func (b *Backend) ExpireReservations(ctx context.Context, reservationExpiryIndexKey string, now time.Time, batchSize int64) (ExpireReservationsResult, error) {
+func (b *Backend) ExpireReservations(ctx context.Context, reservationExpiryIndexKey string, now time.Time, batchSize int64) (backend.ExpireReservationsResult, error) {
 	raw, err := b.evalText(ctx, scriptExpireReservations, nil,
 		reservationExpiryIndexKey,
 		now.UnixMilli(),
 		batchSize,
 	)
 	if err != nil {
-		return ExpireReservationsResult{}, err
+		return backend.ExpireReservationsResult{}, err
 	}
-	var result ExpireReservationsResult
+	var result backend.ExpireReservationsResult
 	if err := json.Unmarshal([]byte(raw), &result); err != nil {
-		return ExpireReservationsResult{}, err
+		return backend.ExpireReservationsResult{}, err
 	}
 	return result, nil
 }
 
-func (b *Backend) AcquireLease(ctx context.Context, idemKey, leaseKey string, lease *quotav1.Lease, leaseTTL time.Duration, ops []LimitOp, dryRun bool, decisionID string) (DecisionResult, error) {
+func (b *Backend) AcquireLease(ctx context.Context, idemKey, leaseKey string, lease *quotav1.Lease, leaseTTL time.Duration, ops []backend.LimitOp, dryRun bool, decisionID string) (backend.DecisionResult, error) {
 	args, err := json.Marshal(ops)
 	if err != nil {
-		return DecisionResult{}, err
+		return backend.DecisionResult{}, err
 	}
 	leaseJSON, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(lease)
 	if err != nil {
-		return DecisionResult{}, err
+		return backend.DecisionResult{}, err
 	}
 	raw, err := b.evalText(ctx, scriptAcquireLease, nil,
 		idemKey,
@@ -477,12 +349,12 @@ func (b *Backend) AcquireLease(ctx context.Context, idemKey, leaseKey string, le
 		decisionID,
 	)
 	if err != nil {
-		return DecisionResult{}, err
+		return backend.DecisionResult{}, err
 	}
 	return parseDecision(raw)
 }
 
-func (b *Backend) RenewLease(ctx context.Context, idemKey, leaseKey, leaseID string, extendTTL time.Duration, now time.Time) (LeaseResult, error) {
+func (b *Backend) RenewLease(ctx context.Context, idemKey, leaseKey, leaseID string, extendTTL time.Duration, now time.Time) (backend.LeaseResult, error) {
 	raw, err := b.evalText(ctx, scriptRenewLease, nil,
 		idemKey,
 		millis(defaultIdempotencyTTL),
@@ -492,12 +364,12 @@ func (b *Backend) RenewLease(ctx context.Context, idemKey, leaseKey, leaseID str
 		now.UnixMilli(),
 	)
 	if err != nil {
-		return LeaseResult{}, err
+		return backend.LeaseResult{}, err
 	}
 	return parseLeaseResult(raw)
 }
 
-func (b *Backend) ReleaseLease(ctx context.Context, idemKey, leaseKey, leaseID string) (LeaseResult, error) {
+func (b *Backend) ReleaseLease(ctx context.Context, idemKey, leaseKey, leaseID string) (backend.LeaseResult, error) {
 	raw, err := b.evalText(ctx, scriptReleaseLease, nil,
 		idemKey,
 		millis(defaultIdempotencyTTL),
@@ -505,7 +377,7 @@ func (b *Backend) ReleaseLease(ctx context.Context, idemKey, leaseKey, leaseID s
 		leaseID,
 	)
 	if err != nil {
-		return LeaseResult{}, err
+		return backend.LeaseResult{}, err
 	}
 	return parseLeaseResult(raw)
 }
@@ -534,9 +406,6 @@ func (b *Backend) GetLease(ctx context.Context, key string) (*quotav1.Lease, err
 	return lease, nil
 }
 
-// CounterValue returns the integer value stored at key, treating a
-// missing key as zero. It backs the fixed-window and sliding-window
-// usage queries.
 func (b *Backend) CounterValue(ctx context.Context, key string) (int64, error) {
 	value, err := b.client.Get(ctx, key).Int64()
 	if errors.Is(err, redisclient.Nil) {
@@ -545,15 +414,12 @@ func (b *Backend) CounterValue(ctx context.Context, key string) (int64, error) {
 	return value, err
 }
 
-// BucketState returns the persisted state of a token / leaky bucket
-// key. A missing key is reported with Exists=false; callers translate
-// that into a full bucket.
-func (b *Backend) BucketState(ctx context.Context, key string) (BucketState, error) {
+func (b *Backend) BucketState(ctx context.Context, key string) (backend.BucketState, error) {
 	fields, err := b.client.HMGet(ctx, key, "tokens", "last_refill_ms").Result()
 	if err != nil {
-		return BucketState{}, err
+		return backend.BucketState{}, err
 	}
-	state := BucketState{}
+	state := backend.BucketState{}
 	if fields[0] != nil {
 		tokens, parseErr := strconv.ParseFloat(fmt.Sprint(fields[0]), 64)
 		if parseErr == nil {
@@ -571,9 +437,6 @@ func (b *Backend) BucketState(ctx context.Context, key string) (BucketState, err
 	return state, nil
 }
 
-// GCRAValue returns the GCRA TAT (theoretical arrival time) stored at
-// key. A missing key reports (0, false, nil); the caller treats that
-// as a fully replenished bucket.
 func (b *Backend) GCRAValue(ctx context.Context, key string) (float64, bool, error) {
 	raw, err := b.client.Get(ctx, key).Float64()
 	if errors.Is(err, redisclient.Nil) {
@@ -585,22 +448,19 @@ func (b *Backend) GCRAValue(ctx context.Context, key string) (float64, bool, err
 	return raw, true, nil
 }
 
-// ConcurrencyCount returns the number of active leases recorded in
-// the concurrency sorted-set at key — entries whose score (expiry
-// timestamp in ms) is at or after now.
 func (b *Backend) ConcurrencyCount(ctx context.Context, key string, now time.Time) (int64, error) {
 	return b.client.ZCount(ctx, key, strconv.FormatInt(now.UnixMilli(), 10), "+inf").Result()
 }
 
-func parseDecision(raw string) (DecisionResult, error) {
-	var result DecisionResult
+func parseDecision(raw string) (backend.DecisionResult, error) {
+	var result backend.DecisionResult
 	if err := json.Unmarshal([]byte(raw), &result); err != nil {
-		return DecisionResult{}, err
+		return backend.DecisionResult{}, err
 	}
 	return result, nil
 }
 
-func parseLeaseResult(raw string) (LeaseResult, error) {
+func parseLeaseResult(raw string) (backend.LeaseResult, error) {
 	var envelope struct {
 		Cached   bool            `json:"cached"`
 		Found    bool            `json:"found"`
@@ -609,19 +469,18 @@ func parseLeaseResult(raw string) (LeaseResult, error) {
 		Lease    json.RawMessage `json:"lease"`
 	}
 	if err := json.Unmarshal([]byte(raw), &envelope); err != nil {
-		return LeaseResult{}, err
+		return backend.LeaseResult{}, err
 	}
-	result := LeaseResult{
+	result := backend.LeaseResult{
 		Cached:   envelope.Cached,
 		Found:    envelope.Found,
 		Renewed:  envelope.Renewed,
 		Released: envelope.Released,
-		raw:      envelope.Lease,
 	}
 	if len(envelope.Lease) > 0 {
 		result.Lease = &quotav1.Lease{}
 		if err := protojson.Unmarshal(envelope.Lease, result.Lease); err != nil {
-			return LeaseResult{}, err
+			return backend.LeaseResult{}, err
 		}
 	}
 	return result, nil
@@ -652,14 +511,9 @@ func (b *Backend) evalText(ctx context.Context, scriptName string, keys []string
 	return b.client.EvalSha(ctx, sha, keys, args...).Text()
 }
 
-// ErrNotFound is returned by GetReservation / GetLease when the key
-// does not exist. It lets the ratelimiterserver translate misses into
-// gRPC NotFound without depending on go-redis's sentinel.
-var ErrNotFound = errors.New("redis backend: key not found")
-
 func mapNotFound(err error) error {
 	if errors.Is(err, redisclient.Nil) {
-		return ErrNotFound
+		return backend.ErrNotFound
 	}
 	return err
 }
@@ -678,3 +532,5 @@ func boolArg(v bool) string {
 func millis(d time.Duration) int64 {
 	return int64(d / time.Millisecond)
 }
+
+var _ backend.Backend = (*Backend)(nil)

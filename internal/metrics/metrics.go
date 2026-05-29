@@ -23,8 +23,20 @@ type Metrics struct {
 	registry        *prometheus.Registry
 }
 
-func New() *Metrics {
-	reg := prometheus.NewRegistry()
+// New registers the quota service's metrics. When reg is nil a
+// private *prometheus.Registry is created and used as both the
+// register-target and the scrape-source for Handler / Serve — that
+// is the container path. When reg is supplied (the embedded path),
+// the metrics are registered into the host registry and the
+// Handler / Serve helpers are not available because the host owns
+// scrape.
+func New(reg prometheus.Registerer) *Metrics {
+	var private *prometheus.Registry
+	register := reg
+	if register == nil {
+		private = prometheus.NewRegistry()
+		register = private
+	}
 	m := &Metrics{
 		requests: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "quota_requests_total",
@@ -67,9 +79,9 @@ func New() *Metrics {
 			Name: "quota_event_emit_errors_total",
 			Help: "Asynchronous event emission errors.",
 		}),
-		registry: reg,
+		registry: private,
 	}
-	reg.MustRegister(
+	register.MustRegister(
 		m.requests,
 		m.duration,
 		m.denials,
@@ -108,7 +120,16 @@ func (m *Metrics) ReservationsExpired(count float64) {
 	m.resExpired.Add(count)
 }
 
+// Handler exposes the private metrics registry over HTTP. It is
+// only usable when New was called with a nil registerer (the
+// container path); embedded consumers register into their own
+// registry and serve scrape themselves.
 func (m *Metrics) Handler() http.Handler {
+	if m.registry == nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "metrics handler is unavailable: a host-supplied prometheus.Registerer is in use", http.StatusNotFound)
+		})
+	}
 	return promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{})
 }
 

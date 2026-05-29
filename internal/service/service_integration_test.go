@@ -892,7 +892,7 @@ func newRedisBackedService(t *testing.T) (context.Context, *QuotaService, *rlred
 		config.Config{Product: "workspace", Environment: "test", RedisMode: "single_primary"},
 		store,
 		eventsMust(t),
-		metrics.New(),
+		metrics.New(nil),
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
 	)
 	return ctx, svc, store

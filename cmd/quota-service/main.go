@@ -83,7 +83,7 @@ func serve() error {
 	}
 	defer func() { _ = store.Close() }()
 
-	m := metrics.New()
+	m := metrics.New(nil)
 	go func() {
 		if err := m.Serve(ctx, cfg.MetricsBindAddr); err != nil {
 			logger.Error("metrics server failed", "error", err)

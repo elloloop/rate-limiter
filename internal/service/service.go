@@ -18,7 +18,7 @@ import (
 	"github.com/elloloop/rate-limiter/internal/keys"
 	"github.com/elloloop/rate-limiter/internal/limits"
 	"github.com/elloloop/rate-limiter/internal/metrics"
-	rlredis "github.com/elloloop/rate-limiter/ratelimiterserver/backend/redis"
+	"github.com/elloloop/rate-limiter/ratelimiterserver/backend"
 )
 
 type QuotaService struct {
@@ -26,13 +26,13 @@ type QuotaService struct {
 
 	cfg     config.Config
 	prefix  string
-	store   *rlredis.Backend
+	store   backend.Backend
 	events  events.Sink
 	metrics *metrics.Metrics
 	logger  *slog.Logger
 }
 
-func New(cfg config.Config, store *rlredis.Backend, eventSink events.Sink, m *metrics.Metrics, logger *slog.Logger) *QuotaService {
+func New(cfg config.Config, store backend.Backend, eventSink events.Sink, m *metrics.Metrics, logger *slog.Logger) *QuotaService {
 	return &QuotaService{
 		cfg:     cfg,
 		prefix:  keys.Prefix(cfg.Environment, cfg.Product),
@@ -408,7 +408,7 @@ func (s *QuotaService) GetReservation(ctx context.Context, req *quotav1.GetReser
 		return nil, status.Error(codes.InvalidArgument, "reservation_id is required")
 	}
 	res, err := s.store.GetReservation(ctx, keys.Reservation(s.prefix, req.GetReservationId()))
-	if errors.Is(err, rlredis.ErrNotFound) {
+	if errors.Is(err, backend.ErrNotFound) {
 		return nil, status.Error(codes.NotFound, "reservation not found")
 	}
 	if err != nil {
@@ -422,7 +422,7 @@ func (s *QuotaService) GetLease(ctx context.Context, req *quotav1.GetLeaseReques
 		return nil, status.Error(codes.InvalidArgument, "lease_id is required")
 	}
 	lease, err := s.store.GetLease(ctx, keys.Lease(s.prefix, req.GetLeaseId()))
-	if errors.Is(err, rlredis.ErrNotFound) {
+	if errors.Is(err, backend.ErrNotFound) {
 		return nil, status.Error(codes.NotFound, "lease not found")
 	}
 	if err != nil {
@@ -472,7 +472,7 @@ func (s *QuotaService) ExpireReservations(ctx context.Context, batchSize int64) 
 	return result.Expired, nil
 }
 
-func (s *QuotaService) newReservation(req *quotav1.ReserveRequest, ops []rlredis.LimitOp, now time.Time) *quotav1.Reservation {
+func (s *QuotaService) newReservation(req *quotav1.ReserveRequest, ops []backend.LimitOp, now time.Time) *quotav1.Reservation {
 	impacts := make([]*quotav1.ReservationImpact, 0, len(req.GetLimits()))
 	for i, limit := range req.GetLimits() {
 		impacts = append(impacts, &quotav1.ReservationImpact{
@@ -503,7 +503,7 @@ func (s *QuotaService) newReservation(req *quotav1.ReserveRequest, ops []rlredis
 	}
 }
 
-func (s *QuotaService) newLease(req *quotav1.AcquireLeaseRequest, ops []rlredis.LimitOp, now time.Time) *quotav1.Lease {
+func (s *QuotaService) newLease(req *quotav1.AcquireLeaseRequest, ops []backend.LimitOp, now time.Time) *quotav1.Lease {
 	impacts := make([]*quotav1.LeaseImpact, 0, len(req.GetLimits()))
 	for i, limit := range req.GetLimits() {
 		impacts = append(impacts, &quotav1.LeaseImpact{
@@ -523,10 +523,10 @@ func (s *QuotaService) newLease(req *quotav1.AcquireLeaseRequest, ops []rlredis.
 	}
 }
 
-func (s *QuotaService) buildLimitOps(limits []*quotav1.Limit, cost int64, now time.Time, concurrencyOnly bool) ([]rlredis.LimitOp, error) {
-	ops := make([]rlredis.LimitOp, 0, len(limits))
+func (s *QuotaService) buildLimitOps(limits []*quotav1.Limit, cost int64, now time.Time, concurrencyOnly bool) ([]backend.LimitOp, error) {
+	ops := make([]backend.LimitOp, 0, len(limits))
 	for _, limit := range limits {
-		op := rlredis.LimitOp{
+		op := backend.LimitOp{
 			LimitID:          limit.GetLimitId(),
 			Limit:            limit.GetLimit(),
 			Cost:             cost,
@@ -725,7 +725,7 @@ func (s *QuotaService) gcraUsage(ctx context.Context, key string, limit *quotav1
 	return 1, 0, nil
 }
 
-func (s *QuotaService) decisionFromResult(result rlredis.DecisionResult, supplied []*quotav1.Limit, cost int64, dryRun bool, op string) *quotav1.Decision {
+func (s *QuotaService) decisionFromResult(result backend.DecisionResult, supplied []*quotav1.Limit, cost int64, dryRun bool, op string) *quotav1.Decision {
 	reason := quotav1.DecisionReason_DECISION_REASON_ALLOWED
 	message := "allowed"
 	if !result.Allowed {
@@ -789,7 +789,7 @@ func (s *QuotaService) decisionFromResult(result rlredis.DecisionResult, supplie
 	}
 }
 
-func (s *QuotaService) decisionFromReservationIncrement(result rlredis.DecisionResult, reservation *quotav1.Reservation, cost int64) *quotav1.Decision {
+func (s *QuotaService) decisionFromReservationIncrement(result backend.DecisionResult, reservation *quotav1.Reservation, cost int64) *quotav1.Decision {
 	reason := quotav1.DecisionReason_DECISION_REASON_ALLOWED
 	message := "reservation incremented"
 	if result.Message != "" {

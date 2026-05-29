@@ -1,5 +1,5 @@
 // Package redis is the Redis-backed implementation of the
-// ratelimiterserver Backend interface. It is the only backend the
+// backend.Backend interface. It is the only backend the
 // rate-limiter ships with in v0.4.0; the algorithms (sliding window,
 // token bucket, GCRA, reservation, lease) rely on Redis Lua scripts
 // for atomicity, so the abstraction is intentionally Redis-shaped.

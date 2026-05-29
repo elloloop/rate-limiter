@@ -8,7 +8,7 @@ import (
 )
 
 func TestHandlerExposesDocumentedMetrics(t *testing.T) {
-	m := New()
+	m := New(nil)
 	m.Observe("Consume", "workspace.email.recipients", "workspace", true, "DECISION_REASON_ALLOWED", time.Now().Add(-25*time.Millisecond))
 	m.Denial("workspace.email.recipients", "workspace", "user_daily")
 	m.RedisError()
