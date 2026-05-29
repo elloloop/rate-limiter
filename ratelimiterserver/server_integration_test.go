@@ -1,9 +1,7 @@
-package service
+package ratelimiterserver
 
 import (
 	"context"
-	"io"
-	"log/slog"
 	"net"
 	"net/http/httptest"
 	"os"
@@ -14,9 +12,6 @@ import (
 	"time"
 
 	quotav1 "github.com/elloloop/rate-limiter/gen/quota/v1"
-	"github.com/elloloop/rate-limiter/internal/config"
-	"github.com/elloloop/rate-limiter/internal/events"
-	"github.com/elloloop/rate-limiter/internal/metrics"
 	rlredis "github.com/elloloop/rate-limiter/ratelimiterserver/backend/redis"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -871,7 +866,7 @@ func TestGRPCRoundTripWithRedis(t *testing.T) {
 	}
 }
 
-func newRedisBackedService(t *testing.T) (context.Context, *QuotaService, *rlredis.Backend) {
+func newRedisBackedService(t *testing.T) (context.Context, *Server, *rlredis.Backend) {
 	t.Helper()
 	redisURL := os.Getenv("QUOTA_TEST_REDIS_URL")
 	if redisURL == "" {
@@ -888,23 +883,15 @@ func newRedisBackedService(t *testing.T) (context.Context, *QuotaService, *rlred
 		t.Fatalf("flush redis: %v", err)
 	}
 
-	svc := New(
-		config.Config{Product: "workspace", Environment: "test", RedisMode: "single_primary"},
-		store,
-		eventsMust(t),
-		metrics.New(nil),
-		slog.New(slog.NewTextHandler(io.Discard, nil)),
-	)
-	return ctx, svc, store
-}
-
-func eventsMust(t *testing.T) events.Sink {
-	t.Helper()
-	sink, err := events.New("none", "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	svc, err := New(ctx, Options{
+		Product:     "workspace",
+		Environment: "test",
+		Backend:     store,
+	})
 	if err != nil {
-		t.Fatalf("event sink: %v", err)
+		t.Fatalf("ratelimiterserver.New: %v", err)
 	}
-	return sink
+	return ctx, svc, store
 }
 
 func fixedDayLimit() *quotav1.Limit {
@@ -987,7 +974,7 @@ func concurrencyLimit(limit int64) *quotav1.Limit {
 	}
 }
 
-func assertUsed(t *testing.T, ctx context.Context, svc *QuotaService, limit *quotav1.Limit, want int64) { //nolint:revive // test helper: *testing.T conventionally leads the parameter list
+func assertUsed(t *testing.T, ctx context.Context, svc *Server, limit *quotav1.Limit, want int64) { //nolint:revive // test helper: *testing.T conventionally leads the parameter list
 	t.Helper()
 	usage, err := svc.GetCurrentUsage(ctx, &quotav1.GetCurrentUsageRequest{
 		Context: &quotav1.RequestContext{Product: "workspace", Environment: "test"},
@@ -1002,7 +989,7 @@ func assertUsed(t *testing.T, ctx context.Context, svc *QuotaService, limit *quo
 	}
 }
 
-func serviceMetrics(t *testing.T, svc *QuotaService) string {
+func serviceMetrics(t *testing.T, svc *Server) string {
 	t.Helper()
 	req := httptest.NewRequest("GET", "/metrics", nil)
 	rec := httptest.NewRecorder()
@@ -1017,7 +1004,7 @@ func requireMetric(t *testing.T, body, want string) {
 	}
 }
 
-func acquireLease(t *testing.T, ctx context.Context, svc *QuotaService, requestID string, limit *quotav1.Limit) *quotav1.AcquireLeaseResponse { //nolint:revive // test helper: *testing.T conventionally leads the parameter list
+func acquireLease(t *testing.T, ctx context.Context, svc *Server, requestID string, limit *quotav1.Limit) *quotav1.AcquireLeaseResponse { //nolint:revive // test helper: *testing.T conventionally leads the parameter list
 	t.Helper()
 	resp, err := svc.AcquireLease(ctx, &quotav1.AcquireLeaseRequest{
 		RequestId:  requestID,

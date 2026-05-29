@@ -7,7 +7,7 @@ default: 60
 include:
   - internal/
   - cmd/
-  - ratelimiterserver/
+  - ratelimiterserver
 
 packages:
   cmd/quota-service: 15
@@ -16,5 +16,6 @@ packages:
   internal/keys: 82
   internal/limits: 64
   internal/metrics: 60
-  internal/service: 60
-  ratelimiterserver/backend/redis: 72
+  ratelimiterserver: 60
+  ratelimiterserver/backend: 80
+  ratelimiterserver/backend/redis: 64

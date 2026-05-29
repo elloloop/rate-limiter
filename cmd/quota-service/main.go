@@ -26,8 +26,7 @@ import (
 	"github.com/elloloop/rate-limiter/internal/config"
 	"github.com/elloloop/rate-limiter/internal/events"
 	"github.com/elloloop/rate-limiter/internal/limits"
-	"github.com/elloloop/rate-limiter/internal/metrics"
-	"github.com/elloloop/rate-limiter/internal/service"
+	"github.com/elloloop/rate-limiter/ratelimiterserver"
 	rlredis "github.com/elloloop/rate-limiter/ratelimiterserver/backend/redis"
 )
 
@@ -77,19 +76,11 @@ func serve() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	store, err := rlredis.New(ctx, cfg.RedisURL)
+	backend, err := rlredis.New(ctx, cfg.RedisURL)
 	if err != nil {
 		return fmt.Errorf("redis init: %w", err)
 	}
-	defer func() { _ = store.Close() }()
-
-	m := metrics.New(nil)
-	go func() {
-		if err := m.Serve(ctx, cfg.MetricsBindAddr); err != nil {
-			logger.Error("metrics server failed", "error", err)
-			stop()
-		}
-	}()
+	defer func() { _ = backend.Close() }()
 
 	eventSink, err := events.New(cfg.EventSink, cfg.EventDatabaseURL, logger)
 	if err != nil {
@@ -97,12 +88,30 @@ func serve() error {
 	}
 	defer func() { _ = eventSink.Close() }()
 
-	opts, err := grpcServerOptions(cfg)
+	quota, err := ratelimiterserver.New(ctx, ratelimiterserver.Options{
+		Product:     cfg.Product,
+		Environment: cfg.Environment,
+		Backend:     backend,
+		RedisMode:   cfg.RedisMode,
+		EventSink:   eventSink,
+		Logger:      logger,
+	})
+	if err != nil {
+		return fmt.Errorf("ratelimiterserver init: %w", err)
+	}
+
+	go func() {
+		if err := quota.Metrics().Serve(ctx, cfg.MetricsBindAddr); err != nil {
+			logger.Error("metrics server failed", "error", err)
+			stop()
+		}
+	}()
+
+	grpcOpts, err := grpcServerOptions(cfg)
 	if err != nil {
 		return err
 	}
-	server := grpc.NewServer(opts...)
-	quota := service.New(cfg, store, eventSink, m, logger)
+	server := grpc.NewServer(grpcOpts...)
 	quotav1.RegisterQuotaServiceServer(server, quota)
 	go runReservationExpirySweeper(ctx, quota, logger, time.Second, 100)
 
@@ -138,7 +147,7 @@ func serve() error {
 	return nil
 }
 
-func runReservationExpirySweeper(ctx context.Context, quota *service.QuotaService, logger *slog.Logger, interval time.Duration, batchSize int64) {
+func runReservationExpirySweeper(ctx context.Context, quota *ratelimiterserver.Server, logger *slog.Logger, interval time.Duration, batchSize int64) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -159,7 +168,7 @@ func runReservationExpirySweeper(ctx context.Context, quota *service.QuotaServic
 	}
 }
 
-func runHealthProbe(ctx context.Context, healthServer *health.Server, quota *service.QuotaService, logger *slog.Logger, interval time.Duration) {
+func runHealthProbe(ctx context.Context, healthServer *health.Server, quota *ratelimiterserver.Server, logger *slog.Logger, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -174,7 +183,7 @@ func runHealthProbe(ctx context.Context, healthServer *health.Server, quota *ser
 	}
 }
 
-func updateHealthStatus(ctx context.Context, healthServer *health.Server, quota *service.QuotaService, logger *slog.Logger) {
+func updateHealthStatus(ctx context.Context, healthServer *health.Server, quota *ratelimiterserver.Server, logger *slog.Logger) {
 	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 

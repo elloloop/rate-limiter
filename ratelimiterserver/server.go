@@ -1,9 +1,10 @@
-package service
+package ratelimiterserver
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"time"
@@ -13,37 +14,106 @@ import (
 	"google.golang.org/grpc/status"
 
 	quotav1 "github.com/elloloop/rate-limiter/gen/quota/v1"
-	"github.com/elloloop/rate-limiter/internal/config"
-	"github.com/elloloop/rate-limiter/internal/events"
 	"github.com/elloloop/rate-limiter/internal/keys"
 	"github.com/elloloop/rate-limiter/internal/limits"
 	"github.com/elloloop/rate-limiter/internal/metrics"
 	"github.com/elloloop/rate-limiter/ratelimiterserver/backend"
 )
 
-type QuotaService struct {
+// Server is the rate-limiter, mounted on a host *grpc.Server. It
+// implements quotav1.QuotaServiceServer; build it with [New] and
+// register it on the host grpc.Server with
+// quotav1.RegisterQuotaServiceServer.
+type Server struct {
 	quotav1.UnimplementedQuotaServiceServer
 
-	cfg     config.Config
-	prefix  string
+	product     string
+	environment string
+	redisMode   string
+	prefix      string
+
 	store   backend.Backend
-	events  events.Sink
+	events  EventSink
 	metrics *metrics.Metrics
 	logger  *slog.Logger
 }
 
-func New(cfg config.Config, store backend.Backend, eventSink events.Sink, m *metrics.Metrics, logger *slog.Logger) *QuotaService {
-	return &QuotaService{
-		cfg:     cfg,
-		prefix:  keys.Prefix(cfg.Environment, cfg.Product),
-		store:   store,
-		events:  eventSink,
-		metrics: m,
-		logger:  logger,
+// New validates opts and constructs a Server. The construction ctx
+// is accepted for symmetry with future backends that may need it;
+// today's wiring does no I/O, so it is unused. The Server retains
+// the supplied backend and emits events, metrics, and logs against
+// the contexts passed to its RPC methods.
+//
+// New returns an error if Product or Environment is empty or if
+// Backend is nil. A non-nil Logger / EventSink / Metrics is used
+// as-is; nil installs the documented default (no-op logger, no-op
+// event sink, isolated private metrics registry).
+func New(_ context.Context, opts Options) (*Server, error) {
+	if opts.Product == "" {
+		return nil, errors.New("ratelimiterserver: Options.Product is required")
 	}
+	if opts.Environment == "" {
+		return nil, errors.New("ratelimiterserver: Options.Environment is required")
+	}
+	if opts.Backend == nil {
+		return nil, errors.New("ratelimiterserver: Options.Backend is required")
+	}
+
+	redisMode := opts.RedisMode
+	if redisMode == "" {
+		redisMode = "single_primary"
+	}
+
+	logger := opts.Logger
+	if logger == nil {
+		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+
+	sink := opts.EventSink
+	if sink == nil {
+		sink = noopEventSink{}
+	}
+
+	return &Server{
+		product:     opts.Product,
+		environment: opts.Environment,
+		redisMode:   redisMode,
+		prefix:      keys.Prefix(opts.Environment, opts.Product),
+		store:       opts.Backend,
+		events:      sink,
+		metrics:     metrics.New(opts.Metrics),
+		logger:      logger,
+	}, nil
 }
 
-func (s *QuotaService) Consume(ctx context.Context, req *quotav1.ConsumeRequest) (*quotav1.ConsumeResponse, error) {
+// Metrics returns the Prometheus collector wrapper the server
+// records its RED metrics into. When the host did not supply its
+// own Registerer through Options.Metrics, the returned *Metrics
+// exposes a private registry via Handler / Serve; cmd/quota-service
+// uses that to serve /metrics on its dedicated bind address.
+func (s *Server) Metrics() *metrics.Metrics {
+	return s.metrics
+}
+
+// ExpireReservations runs one sweep of the reservation expiry index.
+// Callers schedule it on a ticker — cmd/quota-service does so once
+// per second. batchSize <= 0 defaults to 100.
+func (s *Server) ExpireReservations(ctx context.Context, batchSize int64) (int64, error) {
+	if batchSize <= 0 {
+		batchSize = 100
+	}
+	result, err := s.store.ExpireReservations(ctx, keys.ReservationExpiryIndex(s.prefix), time.Now(), batchSize)
+	if err != nil {
+		s.metrics.RedisError()
+		return 0, err
+	}
+	if result.Expired > 0 {
+		s.metrics.ReservationsExpired(float64(result.Expired))
+	}
+	return result.Expired, nil
+}
+
+func (s *Server) Consume(ctx context.Context, req *quotav1.ConsumeRequest) (*quotav1.ConsumeResponse, error) {
 	start := time.Now()
 	if req.GetRequestId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "request_id is required")
@@ -79,7 +149,7 @@ func (s *QuotaService) Consume(ctx context.Context, req *quotav1.ConsumeRequest)
 	return &quotav1.ConsumeResponse{Decision: decision}, nil
 }
 
-func (s *QuotaService) Reserve(ctx context.Context, req *quotav1.ReserveRequest) (*quotav1.ReserveResponse, error) {
+func (s *Server) Reserve(ctx context.Context, req *quotav1.ReserveRequest) (*quotav1.ReserveResponse, error) {
 	start := time.Now()
 	if req.GetRequestId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "request_id is required")
@@ -138,7 +208,7 @@ func (s *QuotaService) Reserve(ctx context.Context, req *quotav1.ReserveRequest)
 	return &quotav1.ReserveResponse{Decision: decision, Reservation: reservation}, nil
 }
 
-func (s *QuotaService) IncrementReservation(ctx context.Context, req *quotav1.IncrementReservationRequest) (*quotav1.IncrementReservationResponse, error) {
+func (s *Server) IncrementReservation(ctx context.Context, req *quotav1.IncrementReservationRequest) (*quotav1.IncrementReservationResponse, error) {
 	start := time.Now()
 	if req.GetRequestId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "request_id is required")
@@ -186,7 +256,7 @@ func (s *QuotaService) IncrementReservation(ctx context.Context, req *quotav1.In
 	}, nil
 }
 
-func (s *QuotaService) FinalizeReservation(ctx context.Context, req *quotav1.FinalizeReservationRequest) (*quotav1.FinalizeReservationResponse, error) {
+func (s *Server) FinalizeReservation(ctx context.Context, req *quotav1.FinalizeReservationRequest) (*quotav1.FinalizeReservationResponse, error) {
 	if req.GetRequestId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "request_id is required")
 	}
@@ -223,7 +293,7 @@ func (s *QuotaService) FinalizeReservation(ctx context.Context, req *quotav1.Fin
 	}, nil
 }
 
-func (s *QuotaService) ReleaseReservation(ctx context.Context, req *quotav1.ReleaseReservationRequest) (*quotav1.ReleaseReservationResponse, error) {
+func (s *Server) ReleaseReservation(ctx context.Context, req *quotav1.ReleaseReservationRequest) (*quotav1.ReleaseReservationResponse, error) {
 	if req.GetRequestId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "request_id is required")
 	}
@@ -251,7 +321,7 @@ func (s *QuotaService) ReleaseReservation(ctx context.Context, req *quotav1.Rele
 	}, nil
 }
 
-func (s *QuotaService) AcquireLease(ctx context.Context, req *quotav1.AcquireLeaseRequest) (*quotav1.AcquireLeaseResponse, error) {
+func (s *Server) AcquireLease(ctx context.Context, req *quotav1.AcquireLeaseRequest) (*quotav1.AcquireLeaseResponse, error) {
 	start := time.Now()
 	if req.GetRequestId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "request_id is required")
@@ -298,7 +368,7 @@ func (s *QuotaService) AcquireLease(ctx context.Context, req *quotav1.AcquireLea
 	return &quotav1.AcquireLeaseResponse{Decision: decision, Lease: lease}, nil
 }
 
-func (s *QuotaService) RenewLease(ctx context.Context, req *quotav1.RenewLeaseRequest) (*quotav1.RenewLeaseResponse, error) {
+func (s *Server) RenewLease(ctx context.Context, req *quotav1.RenewLeaseRequest) (*quotav1.RenewLeaseResponse, error) {
 	if req.GetRequestId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "request_id is required")
 	}
@@ -322,7 +392,7 @@ func (s *QuotaService) RenewLease(ctx context.Context, req *quotav1.RenewLeaseRe
 	return &quotav1.RenewLeaseResponse{Lease: result.Lease, Renewed: result.Renewed}, nil
 }
 
-func (s *QuotaService) ReleaseLease(ctx context.Context, req *quotav1.ReleaseLeaseRequest) (*quotav1.ReleaseLeaseResponse, error) {
+func (s *Server) ReleaseLease(ctx context.Context, req *quotav1.ReleaseLeaseRequest) (*quotav1.ReleaseLeaseResponse, error) {
 	if req.GetRequestId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "request_id is required")
 	}
@@ -346,7 +416,7 @@ func (s *QuotaService) ReleaseLease(ctx context.Context, req *quotav1.ReleaseLea
 	return &quotav1.ReleaseLeaseResponse{LeaseId: req.GetLeaseId(), Released: result.Released}, nil
 }
 
-func (s *QuotaService) Explain(ctx context.Context, req *quotav1.ExplainRequest) (*quotav1.ExplainResponse, error) {
+func (s *Server) Explain(ctx context.Context, req *quotav1.ExplainRequest) (*quotav1.ExplainResponse, error) {
 	errs, warnings := limits.Validate(req.GetAction(), req.GetLimits())
 	if len(errs) > 0 {
 		return &quotav1.ExplainResponse{
@@ -385,7 +455,7 @@ func (s *QuotaService) Explain(ctx context.Context, req *quotav1.ExplainRequest)
 	return &quotav1.ExplainResponse{WouldAllow: wouldAllow, Reason: reason, Message: reason.String(), Evaluations: evals}, nil
 }
 
-func (s *QuotaService) GetCurrentUsage(ctx context.Context, req *quotav1.GetCurrentUsageRequest) (*quotav1.GetCurrentUsageResponse, error) {
+func (s *Server) GetCurrentUsage(ctx context.Context, req *quotav1.GetCurrentUsageRequest) (*quotav1.GetCurrentUsageResponse, error) {
 	errs, _ := limits.Validate(req.GetAction(), req.GetLimits())
 	if len(errs) > 0 {
 		return nil, status.Error(codes.InvalidArgument, "invalid limits")
@@ -398,12 +468,12 @@ func (s *QuotaService) GetCurrentUsage(ctx context.Context, req *quotav1.GetCurr
 	return &quotav1.GetCurrentUsageResponse{LimitStatuses: usage}, nil
 }
 
-func (s *QuotaService) ValidateLimits(_ context.Context, req *quotav1.ValidateLimitsRequest) (*quotav1.ValidateLimitsResponse, error) {
+func (s *Server) ValidateLimits(_ context.Context, req *quotav1.ValidateLimitsRequest) (*quotav1.ValidateLimitsResponse, error) {
 	errs, warnings := limits.Validate("", req.GetLimits())
 	return &quotav1.ValidateLimitsResponse{Valid: len(errs) == 0, Errors: errs, Warnings: warnings}, nil
 }
 
-func (s *QuotaService) GetReservation(ctx context.Context, req *quotav1.GetReservationRequest) (*quotav1.Reservation, error) {
+func (s *Server) GetReservation(ctx context.Context, req *quotav1.GetReservationRequest) (*quotav1.Reservation, error) {
 	if req.GetReservationId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "reservation_id is required")
 	}
@@ -417,7 +487,7 @@ func (s *QuotaService) GetReservation(ctx context.Context, req *quotav1.GetReser
 	return res, nil
 }
 
-func (s *QuotaService) GetLease(ctx context.Context, req *quotav1.GetLeaseRequest) (*quotav1.Lease, error) {
+func (s *Server) GetLease(ctx context.Context, req *quotav1.GetLeaseRequest) (*quotav1.Lease, error) {
 	if req.GetLeaseId() == "" {
 		return nil, status.Error(codes.InvalidArgument, "lease_id is required")
 	}
@@ -431,48 +501,39 @@ func (s *QuotaService) GetLease(ctx context.Context, req *quotav1.GetLeaseReques
 	return lease, nil
 }
 
-func (s *QuotaService) GetRedisStatus(ctx context.Context, _ *quotav1.GetRedisStatusRequest) (*quotav1.RedisStatus, error) {
+// GetRedisStatus pings the backend and reports its health. The
+// response RPC error is nil even when the backend is unreachable —
+// the status fields carry the result, so a health probe can be
+// scheduled without inferring backend state from error patterns.
+//
+//nolint:nilerr // unreachable backend is health data, not an RPC error
+func (s *Server) GetRedisStatus(ctx context.Context, _ *quotav1.GetRedisStatusRequest) (*quotav1.RedisStatus, error) {
 	start := time.Now()
 	latency := func() int64 { return time.Since(start).Milliseconds() }
 	if err := s.store.Ping(ctx); err != nil {
-		return &quotav1.RedisStatus{Reachable: false, Mode: s.cfg.RedisMode, LatencyMs: latency(), Message: err.Error()}, nil
+		return &quotav1.RedisStatus{Reachable: false, Mode: s.redisMode, LatencyMs: latency(), Message: err.Error()}, nil
 	}
 	loaded, err := s.store.ScriptsLoaded(ctx)
 	if err != nil {
-		return &quotav1.RedisStatus{Reachable: false, Mode: s.cfg.RedisMode, LatencyMs: latency(), Message: err.Error()}, nil
+		return &quotav1.RedisStatus{Reachable: false, Mode: s.redisMode, LatencyMs: latency(), Message: err.Error()}, nil
 	}
 	if loaded {
-		return &quotav1.RedisStatus{Reachable: true, Mode: s.cfg.RedisMode, LatencyMs: latency(), Message: "ok"}, nil
+		return &quotav1.RedisStatus{Reachable: true, Mode: s.redisMode, LatencyMs: latency(), Message: "ok"}, nil
 	}
 	if err := s.store.LoadScripts(ctx); err != nil {
-		return &quotav1.RedisStatus{Reachable: true, Mode: s.cfg.RedisMode, LatencyMs: latency(), Message: "reload Redis scripts: " + err.Error()}, nil
+		return &quotav1.RedisStatus{Reachable: true, Mode: s.redisMode, LatencyMs: latency(), Message: "reload Redis scripts: " + err.Error()}, nil
 	}
 	reloaded, err := s.store.ScriptsLoaded(ctx)
 	if err != nil {
-		return &quotav1.RedisStatus{Reachable: false, Mode: s.cfg.RedisMode, LatencyMs: latency(), Message: err.Error()}, nil
+		return &quotav1.RedisStatus{Reachable: false, Mode: s.redisMode, LatencyMs: latency(), Message: err.Error()}, nil
 	}
 	if !reloaded {
-		return &quotav1.RedisStatus{Reachable: true, Mode: s.cfg.RedisMode, LatencyMs: latency(), Message: "one or more Redis scripts are not loaded"}, nil
+		return &quotav1.RedisStatus{Reachable: true, Mode: s.redisMode, LatencyMs: latency(), Message: "one or more Redis scripts are not loaded"}, nil
 	}
-	return &quotav1.RedisStatus{Reachable: true, Mode: s.cfg.RedisMode, LatencyMs: latency(), Message: "ok"}, nil
+	return &quotav1.RedisStatus{Reachable: true, Mode: s.redisMode, LatencyMs: latency(), Message: "ok"}, nil
 }
 
-func (s *QuotaService) ExpireReservations(ctx context.Context, batchSize int64) (int64, error) {
-	if batchSize <= 0 {
-		batchSize = 100
-	}
-	result, err := s.store.ExpireReservations(ctx, keys.ReservationExpiryIndex(s.prefix), time.Now(), batchSize)
-	if err != nil {
-		s.metrics.RedisError()
-		return 0, err
-	}
-	if result.Expired > 0 {
-		s.metrics.ReservationsExpired(float64(result.Expired))
-	}
-	return result.Expired, nil
-}
-
-func (s *QuotaService) newReservation(req *quotav1.ReserveRequest, ops []backend.LimitOp, now time.Time) *quotav1.Reservation {
+func (s *Server) newReservation(req *quotav1.ReserveRequest, ops []backend.LimitOp, now time.Time) *quotav1.Reservation {
 	impacts := make([]*quotav1.ReservationImpact, 0, len(req.GetLimits()))
 	for i, limit := range req.GetLimits() {
 		impacts = append(impacts, &quotav1.ReservationImpact{
@@ -503,7 +564,7 @@ func (s *QuotaService) newReservation(req *quotav1.ReserveRequest, ops []backend
 	}
 }
 
-func (s *QuotaService) newLease(req *quotav1.AcquireLeaseRequest, ops []backend.LimitOp, now time.Time) *quotav1.Lease {
+func (s *Server) newLease(req *quotav1.AcquireLeaseRequest, ops []backend.LimitOp, now time.Time) *quotav1.Lease {
 	impacts := make([]*quotav1.LeaseImpact, 0, len(req.GetLimits()))
 	for i, limit := range req.GetLimits() {
 		impacts = append(impacts, &quotav1.LeaseImpact{
@@ -523,9 +584,9 @@ func (s *QuotaService) newLease(req *quotav1.AcquireLeaseRequest, ops []backend.
 	}
 }
 
-func (s *QuotaService) buildLimitOps(limits []*quotav1.Limit, cost int64, now time.Time, concurrencyOnly bool) ([]backend.LimitOp, error) {
-	ops := make([]backend.LimitOp, 0, len(limits))
-	for _, limit := range limits {
+func (s *Server) buildLimitOps(supplied []*quotav1.Limit, cost int64, now time.Time, concurrencyOnly bool) ([]backend.LimitOp, error) {
+	ops := make([]backend.LimitOp, 0, len(supplied))
+	for _, limit := range supplied {
 		op := backend.LimitOp{
 			LimitID:          limit.GetLimitId(),
 			Limit:            limit.GetLimit(),
@@ -600,10 +661,10 @@ func (s *QuotaService) buildLimitOps(limits []*quotav1.Limit, cost int64, now ti
 	return ops, nil
 }
 
-func (s *QuotaService) currentUsage(ctx context.Context, supplied []*quotav1.Limit, now time.Time) ([]*quotav1.LimitStatus, error) {
+func (s *Server) currentUsage(ctx context.Context, supplied []*quotav1.Limit, now time.Time) ([]*quotav1.LimitStatus, error) {
 	statuses := make([]*quotav1.LimitStatus, 0, len(supplied))
 	for _, limit := range supplied {
-		status := &quotav1.LimitStatus{
+		st := &quotav1.LimitStatus{
 			LimitId:   limit.GetLimitId(),
 			ScopeKey:  limit.GetScopeKey(),
 			Action:    limit.GetAction(),
@@ -617,73 +678,69 @@ func (s *QuotaService) currentUsage(ctx context.Context, supplied []*quotav1.Lim
 		switch limit.GetAlgorithm() {
 		case quotav1.Algorithm_ALGORITHM_FIXED_WINDOW_CALENDAR:
 			key, reset, _ := keys.FixedWindow(s.prefix, limit, now)
-			used, err := s.intValue(ctx, key)
+			used, err := s.store.CounterValue(ctx, key)
 			if err != nil {
 				return nil, err
 			}
-			status.Used = used
-			status.ResetAtUnixMs = reset.UnixMilli()
+			st.Used = used
+			st.ResetAtUnixMs = reset.UnixMilli()
 		case quotav1.Algorithm_ALGORITHM_FIXED_WINDOW_DURATION:
 			key, reset, _ := keys.DurationWindow(s.prefix, limit, now)
-			used, err := s.intValue(ctx, key)
+			used, err := s.store.CounterValue(ctx, key)
 			if err != nil {
 				return nil, err
 			}
-			status.Used = used
-			status.ResetAtUnixMs = reset.UnixMilli()
+			st.Used = used
+			st.ResetAtUnixMs = reset.UnixMilli()
 		case quotav1.Algorithm_ALGORITHM_SLIDING_WINDOW:
 			readKeys, _, reset, _ := keys.SlidingBuckets(s.prefix, limit, now)
 			var used int64
 			for _, key := range readKeys {
-				value, err := s.intValue(ctx, key)
+				value, err := s.store.CounterValue(ctx, key)
 				if err != nil {
 					return nil, err
 				}
 				used += value
 			}
-			status.Used = used
-			status.ResetAtUnixMs = reset.UnixMilli()
+			st.Used = used
+			st.ResetAtUnixMs = reset.UnixMilli()
 		case quotav1.Algorithm_ALGORITHM_TOKEN_BUCKET:
 			used, remaining, err := s.bucketUsage(ctx, keys.TokenBucket(s.prefix, limit), limit, now)
 			if err != nil {
 				return nil, err
 			}
-			status.Used = used
-			status.Remaining = remaining
+			st.Used = used
+			st.Remaining = remaining
 		case quotav1.Algorithm_ALGORITHM_LEAKY_BUCKET:
 			used, remaining, err := s.bucketUsage(ctx, keys.LeakyBucket(s.prefix, limit), limit, now)
 			if err != nil {
 				return nil, err
 			}
-			status.Used = used
-			status.Remaining = remaining
+			st.Used = used
+			st.Remaining = remaining
 		case quotav1.Algorithm_ALGORITHM_GCRA:
 			remaining, retry, err := s.gcraUsage(ctx, keys.GCRA(s.prefix, limit), limit, now)
 			if err != nil {
 				return nil, err
 			}
-			status.Remaining = remaining
-			status.RetryAfterMs = retry
+			st.Remaining = remaining
+			st.RetryAfterMs = retry
 		case quotav1.Algorithm_ALGORITHM_CONCURRENCY:
 			active, err := s.store.ConcurrencyCount(ctx, keys.LeaseSet(s.prefix, limit), now)
 			if err != nil {
 				return nil, err
 			}
-			status.Used = active
+			st.Used = active
 		}
-		if status.GetRemaining() == 0 && status.GetAlgorithm() != quotav1.Algorithm_ALGORITHM_TOKEN_BUCKET && status.GetAlgorithm() != quotav1.Algorithm_ALGORITHM_LEAKY_BUCKET && status.GetAlgorithm() != quotav1.Algorithm_ALGORITHM_GCRA {
-			status.Remaining = maxInt64(0, status.GetLimit()-status.GetUsed())
+		if st.GetRemaining() == 0 && st.GetAlgorithm() != quotav1.Algorithm_ALGORITHM_TOKEN_BUCKET && st.GetAlgorithm() != quotav1.Algorithm_ALGORITHM_LEAKY_BUCKET && st.GetAlgorithm() != quotav1.Algorithm_ALGORITHM_GCRA {
+			st.Remaining = maxInt64(0, st.GetLimit()-st.GetUsed())
 		}
-		statuses = append(statuses, status)
+		statuses = append(statuses, st)
 	}
 	return statuses, nil
 }
 
-func (s *QuotaService) intValue(ctx context.Context, key string) (int64, error) {
-	return s.store.CounterValue(ctx, key)
-}
-
-func (s *QuotaService) bucketUsage(ctx context.Context, key string, limit *quotav1.Limit, now time.Time) (int64, int64, error) {
+func (s *Server) bucketUsage(ctx context.Context, key string, limit *quotav1.Limit, now time.Time) (int64, int64, error) {
 	capacity := limit.GetBurst()
 	if capacity <= 0 {
 		capacity = limit.GetLimit()
@@ -705,7 +762,7 @@ func (s *QuotaService) bucketUsage(ctx context.Context, key string, limit *quota
 	return int64(math.Max(0, float64(capacity)-available)), int64(math.Floor(available)), nil
 }
 
-func (s *QuotaService) gcraUsage(ctx context.Context, key string, limit *quotav1.Limit, now time.Time) (int64, int64, error) {
+func (s *Server) gcraUsage(ctx context.Context, key string, limit *quotav1.Limit, now time.Time) (int64, int64, error) {
 	raw, ok, err := s.store.GCRAValue(ctx, key)
 	if err != nil {
 		return 0, 0, err
@@ -725,7 +782,7 @@ func (s *QuotaService) gcraUsage(ctx context.Context, key string, limit *quotav1
 	return 1, 0, nil
 }
 
-func (s *QuotaService) decisionFromResult(result backend.DecisionResult, supplied []*quotav1.Limit, cost int64, dryRun bool, op string) *quotav1.Decision {
+func (s *Server) decisionFromResult(result backend.DecisionResult, supplied []*quotav1.Limit, cost int64, dryRun bool, op string) *quotav1.Decision {
 	reason := quotav1.DecisionReason_DECISION_REASON_ALLOWED
 	message := "allowed"
 	if !result.Allowed {
@@ -745,7 +802,7 @@ func (s *QuotaService) decisionFromResult(result backend.DecisionResult, supplie
 		if i < len(supplied) {
 			limit = supplied[i]
 		}
-		status := &quotav1.LimitStatus{
+		st := &quotav1.LimitStatus{
 			LimitId:      scriptStatus.LimitID,
 			Used:         scriptStatus.Used,
 			Remaining:    scriptStatus.Remaining,
@@ -754,21 +811,21 @@ func (s *QuotaService) decisionFromResult(result backend.DecisionResult, supplie
 			Message:      scriptStatus.Message,
 		}
 		if limit != nil {
-			status.ScopeKey = limit.GetScopeKey()
-			status.Action = limit.GetAction()
-			status.Unit = limit.GetUnit()
-			status.Algorithm = limit.GetAlgorithm()
-			status.Window = limit.GetWindow()
-			status.Limit = limit.GetLimit()
-			status.Cost = cost
+			st.ScopeKey = limit.GetScopeKey()
+			st.Action = limit.GetAction()
+			st.Unit = limit.GetUnit()
+			st.Algorithm = limit.GetAlgorithm()
+			st.Window = limit.GetWindow()
+			st.Limit = limit.GetLimit()
+			st.Cost = cost
 		}
-		if !status.GetAllowed() {
-			if status.GetAlgorithm() == quotav1.Algorithm_ALGORITHM_CONCURRENCY {
+		if !st.GetAllowed() {
+			if st.GetAlgorithm() == quotav1.Algorithm_ALGORITHM_CONCURRENCY {
 				reason = quotav1.DecisionReason_DECISION_REASON_CONCURRENCY_EXCEEDED
 			}
-			s.metrics.Denial(status.GetAction(), s.cfg.Product, status.GetLimitId())
+			s.metrics.Denial(st.GetAction(), s.product, st.GetLimitId())
 		}
-		statuses = append(statuses, status)
+		statuses = append(statuses, st)
 	}
 	metadata := map[string]string{}
 	if result.Cached {
@@ -789,7 +846,7 @@ func (s *QuotaService) decisionFromResult(result backend.DecisionResult, supplie
 	}
 }
 
-func (s *QuotaService) decisionFromReservationIncrement(result backend.DecisionResult, reservation *quotav1.Reservation, cost int64) *quotav1.Decision {
+func (s *Server) decisionFromReservationIncrement(result backend.DecisionResult, reservation *quotav1.Reservation, cost int64) *quotav1.Decision {
 	reason := quotav1.DecisionReason_DECISION_REASON_ALLOWED
 	message := "reservation incremented"
 	if result.Message != "" {
@@ -807,7 +864,7 @@ func (s *QuotaService) decisionFromReservationIncrement(result backend.DecisionR
 
 	statuses := make([]*quotav1.LimitStatus, 0, len(result.Statuses))
 	for i, scriptStatus := range result.Statuses {
-		status := &quotav1.LimitStatus{
+		st := &quotav1.LimitStatus{
 			LimitId:      scriptStatus.LimitID,
 			Used:         scriptStatus.Used,
 			Remaining:    scriptStatus.Remaining,
@@ -817,21 +874,21 @@ func (s *QuotaService) decisionFromReservationIncrement(result backend.DecisionR
 			Cost:         cost,
 		}
 		if reservation != nil {
-			status.Action = reservation.GetAction()
+			st.Action = reservation.GetAction()
 			if i < len(reservation.GetImpacts()) {
 				impact := reservation.GetImpacts()[i]
-				status.LimitId = impact.GetLimitId()
-				status.ScopeKey = impact.GetScopeKey()
-				status.Unit = impact.GetUnit()
-				status.Algorithm = impact.GetAlgorithm()
-				status.Limit = impact.GetLimit()
-				status.ResetAtUnixMs = impact.GetResetAtUnixMs()
+				st.LimitId = impact.GetLimitId()
+				st.ScopeKey = impact.GetScopeKey()
+				st.Unit = impact.GetUnit()
+				st.Algorithm = impact.GetAlgorithm()
+				st.Limit = impact.GetLimit()
+				st.ResetAtUnixMs = impact.GetResetAtUnixMs()
 			}
 		}
-		if !status.GetAllowed() {
-			s.metrics.Denial(status.GetAction(), s.cfg.Product, status.GetLimitId())
+		if !st.GetAllowed() {
+			s.metrics.Denial(st.GetAction(), s.product, st.GetLimitId())
 		}
-		statuses = append(statuses, status)
+		statuses = append(statuses, st)
 	}
 
 	metadata := map[string]string{}
@@ -853,13 +910,13 @@ func (s *QuotaService) decisionFromReservationIncrement(result backend.DecisionR
 	}
 }
 
-func (s *QuotaService) recordMetrics(rpc, action string, decision *quotav1.Decision, start time.Time) {
-	s.metrics.Observe(rpc, action, s.cfg.Product, decision.GetAllowed(), decision.GetReason().String(), start)
+func (s *Server) recordMetrics(rpc, action string, decision *quotav1.Decision, start time.Time) {
+	s.metrics.Observe(rpc, action, s.product, decision.GetAllowed(), decision.GetReason().String(), start)
 }
 
-func (s *QuotaService) emit(ctx context.Context, eventType, requestID string, reqCtx *quotav1.RequestContext, action string, cost int64, decision *quotav1.Decision, reservation *quotav1.Reservation, lease *quotav1.Lease) {
-	product := s.cfg.Product
-	environment := s.cfg.Environment
+func (s *Server) emit(ctx context.Context, eventType, requestID string, reqCtx *quotav1.RequestContext, action string, cost int64, decision *quotav1.Decision, reservation *quotav1.Reservation, lease *quotav1.Lease) {
+	product := s.product
+	environment := s.environment
 	metadata := map[string]string{}
 	if reqCtx != nil {
 		if reqCtx.GetProduct() != "" {
@@ -876,7 +933,7 @@ func (s *QuotaService) emit(ctx context.Context, eventType, requestID string, re
 	if statuses := decision.GetLimitStatuses(); len(statuses) > 0 {
 		unit = statuses[0].GetUnit()
 	}
-	s.events.Emit(ctx, events.Event{
+	s.events.Emit(ctx, Event{
 		EventType:   eventType,
 		Timestamp:   time.Now().UTC(),
 		RequestID:   requestID,
@@ -922,3 +979,13 @@ func maxInt64(a, b int64) int64 {
 	}
 	return b
 }
+
+// noopEventSink is the default EventSink installed when Options
+// leaves it nil. It drops every event so the server's hot path
+// never blocks on absent wiring.
+type noopEventSink struct{}
+
+func (noopEventSink) Emit(context.Context, Event) {}
+func (noopEventSink) Close() error                { return nil }
+
+var _ quotav1.QuotaServiceServer = (*Server)(nil)
