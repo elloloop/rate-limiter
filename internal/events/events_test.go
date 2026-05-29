@@ -1,10 +1,15 @@
 package events
 
 import (
+	"bufio"
 	"context"
+	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -22,8 +27,7 @@ func TestNewNoneReturnsNoopSink(t *testing.T) {
 	if _, ok := sink.(noopSink); !ok {
 		t.Fatalf("New(none) returned %T, want noopSink", sink)
 	}
-	// Emit + Close must not panic and Close must return nil.
-	sink.Emit(context.Background(), Event{EventType: "x"})
+	sink.Emit(context.Background(), Event{EventType: "quota.test"})
 	if err := sink.Close(); err != nil {
 		t.Fatalf("noop Close = %v, want nil", err)
 	}
@@ -37,56 +41,39 @@ func TestNewStdoutReturnsStdoutSink(t *testing.T) {
 	if _, ok := sink.(stdoutSink); !ok {
 		t.Fatalf("New(stdout) returned %T, want stdoutSink", sink)
 	}
-	// Close is trivially nil.
 	if err := sink.Close(); err != nil {
 		t.Fatalf("stdout Close = %v, want nil", err)
 	}
-	// Emit fires a goroutine that marshals + writes; no return value to
-	// inspect. The contract here is "must not panic for a valid event."
-	sink.Emit(context.Background(), Event{
-		EventType:   "test",
-		Timestamp:   time.Now().UTC(),
-		Product:     "rl",
-		Environment: "test",
-		Action:      "evt",
-	})
-	// Give the goroutine a moment so a race-detector run sees the work.
-	time.Sleep(10 * time.Millisecond)
 }
 
-func TestNewUnknownKindRejected(t *testing.T) {
-	_, err := New("redis", "", nullLogger())
-	if err == nil {
-		t.Fatal("New(redis) should reject unknown kind")
+func TestNewRejectsUnsupportedSink(t *testing.T) {
+	_, err := New("kafka", "", nullLogger())
+	if err == nil || !strings.Contains(err.Error(), "unsupported event sink") {
+		t.Fatalf("New unsupported sink error = %v", err)
 	}
-	if !strings.Contains(err.Error(), "redis") {
-		t.Fatalf("error should name the offending kind: %v", err)
+}
+
+func TestNewRejectsInvalidPostgresURL(t *testing.T) {
+	_, err := New("postgres", "%", nullLogger())
+	if err == nil {
+		t.Fatal("expected invalid postgres URL to fail")
 	}
 }
 
 func TestNewPostgresFailsFastOnUnreachableDSN(t *testing.T) {
-	// connect_timeout=1 keeps this snappy; the DSN points at an unroutable
-	// address so init's first ExecContext fails before the test deadline.
 	_, err := New("postgres",
 		"postgres://nobody@127.0.0.1:1/x?sslmode=disable&connect_timeout=1",
 		nullLogger())
 	if err == nil {
-		t.Fatal("New(postgres) with unreachable DSN should error at construction, not at first Emit")
+		t.Fatal("New(postgres) with unreachable DSN should fail")
 	}
-	// We don't assert on the exact wording — pgx's error text isn't stable
-	// across versions — but it must be non-empty so the operator can act on it.
 	if err.Error() == "" {
 		t.Fatal("error message should be non-empty")
 	}
 }
 
-// TestEventJSONShapeMatchesWireConvention is a structural regression test:
-// the snake_case JSON field names are the contract postgres/stdout sinks
-// emit and that downstream consumers (analytics, log pipelines) parse.
-// Renaming a struct field without updating the json tag would silently
-// break consumers.
 func TestEventJSONShapeMatchesWireConvention(t *testing.T) {
-	e := Event{
+	event := Event{
 		EventType:   "consume",
 		Timestamp:   time.Date(2026, 5, 29, 12, 0, 0, 0, time.UTC),
 		RequestID:   "req-1",
@@ -99,7 +86,7 @@ func TestEventJSONShapeMatchesWireConvention(t *testing.T) {
 		Allowed:     true,
 		Metadata:    map[string]string{"k": "v"},
 	}
-	b, err := json.Marshal(e)
+	encoded, err := json.Marshal(event)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -116,17 +103,14 @@ func TestEventJSONShapeMatchesWireConvention(t *testing.T) {
 		`"allowed":true`,
 		`"metadata":{"k":"v"}`,
 	} {
-		if !strings.Contains(string(b), want) {
-			t.Fatalf("JSON missing %q in: %s", want, b)
+		if !strings.Contains(string(encoded), want) {
+			t.Fatalf("JSON missing %q in: %s", want, encoded)
 		}
 	}
 }
 
-// TestEventOmitsZeroOptionalFields documents the wire shape: optional
-// fields use `omitempty` so a minimal event does not carry trailing nulls
-// that confuse downstream parsers.
 func TestEventOmitsZeroOptionalFields(t *testing.T) {
-	e := Event{
+	event := Event{
 		EventType:   "consume",
 		Timestamp:   time.Date(2026, 5, 29, 12, 0, 0, 0, time.UTC),
 		Product:     "rl",
@@ -134,15 +118,189 @@ func TestEventOmitsZeroOptionalFields(t *testing.T) {
 		Action:      "send",
 		Allowed:     false,
 	}
-	b, err := json.Marshal(e)
+	encoded, err := json.Marshal(event)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	for _, mustNotAppear := range []string{
-		"decision_id", "unit", "cost", "limit_statuses", "metadata", "reservation", "lease",
-	} {
-		if strings.Contains(string(b), mustNotAppear) {
-			t.Fatalf("zero optional field %q leaked into JSON: %s", mustNotAppear, b)
+	for _, field := range []string{"decision_id", "unit", "cost", "limit_statuses", "metadata", "reservation", "lease"} {
+		if strings.Contains(string(encoded), field) {
+			t.Fatalf("zero optional field %q leaked into JSON: %s", field, encoded)
 		}
 	}
+}
+
+func TestStdoutSinkWritesEventJSON(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := reader.Close(); err != nil {
+			t.Fatalf("close reader: %v", err)
+		}
+	})
+
+	originalStdout := os.Stdout
+	os.Stdout = writer
+	t.Cleanup(func() {
+		os.Stdout = originalStdout
+		_ = writer.Close()
+	})
+
+	lines := make(chan string, 1)
+	readErrs := make(chan error, 1)
+	go func() {
+		line, err := bufio.NewReader(reader).ReadString('\n')
+		if err != nil {
+			readErrs <- err
+			return
+		}
+		lines <- line
+	}()
+
+	sink := stdoutSink{logger: nullLogger()}
+	sink.Emit(context.Background(), Event{
+		EventType:   "quota.consumed",
+		Timestamp:   time.Unix(100, 0).UTC(),
+		RequestID:   "req-1",
+		DecisionID:  "decision-1",
+		Product:     "workspace",
+		Environment: "test",
+		Action:      "workspace.email.recipients",
+		Unit:        "recipients",
+		Cost:        25,
+		Allowed:     true,
+		Metadata:    map[string]string{"account": "acct_1"},
+	})
+
+	select {
+	case err := <-readErrs:
+		t.Fatalf("read stdout event: %v", err)
+	case line := <-lines:
+		var got Event
+		if err := json.Unmarshal([]byte(line), &got); err != nil {
+			t.Fatalf("unmarshal stdout event %q: %v", line, err)
+		}
+		if got.EventType != "quota.consumed" || got.RequestID != "req-1" || got.DecisionID != "decision-1" {
+			t.Fatalf("unexpected event identity: %#v", got)
+		}
+		if got.Product != "workspace" || got.Environment != "test" || got.Action != "workspace.email.recipients" {
+			t.Fatalf("unexpected event labels: %#v", got)
+		}
+		if got.Metadata["account"] != "acct_1" {
+			t.Fatalf("metadata missing from event: %#v", got.Metadata)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for stdout event")
+	}
+}
+
+func TestPostgresSinkEmitInsertsEventAndCloses(t *testing.T) {
+	execs := make(chan eventTestExec, 1)
+	db := sql.OpenDB(eventTestConnector{execs: execs})
+	sink := &postgresSink{
+		db:     db,
+		logger: nullLogger(),
+	}
+	event := Event{
+		EventType:   "quota.consumed",
+		Timestamp:   time.Unix(100, 0).UTC(),
+		RequestID:   "req-postgres",
+		DecisionID:  "decision-postgres",
+		Product:     "workspace",
+		Environment: "prod",
+		Action:      "workspace.email.recipients",
+		Unit:        "recipients",
+		Cost:        3,
+		Allowed:     true,
+		Metadata:    map[string]string{"account": "acct_1"},
+	}
+
+	requestCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	sink.Emit(requestCtx, event)
+
+	select {
+	case exec := <-execs:
+		if !strings.Contains(exec.query, "INSERT INTO quota_usage_events") {
+			t.Fatalf("unexpected insert query: %s", exec.query)
+		}
+		if len(exec.args) != 7 {
+			t.Fatalf("insert args len = %d, want 7", len(exec.args))
+		}
+		assertNamedValue(t, exec.args[0], "quota.consumed")
+		assertNamedValue(t, exec.args[2], "workspace")
+		assertNamedValue(t, exec.args[3], "prod")
+		assertNamedValue(t, exec.args[4], "workspace.email.recipients")
+		assertNamedValue(t, exec.args[5], "req-postgres")
+		payload, ok := exec.args[6].Value.([]byte)
+		if !ok {
+			t.Fatalf("payload arg type = %T, want []byte", exec.args[6].Value)
+		}
+		var stored Event
+		if err := json.Unmarshal(payload, &stored); err != nil {
+			t.Fatalf("unmarshal stored payload: %v", err)
+		}
+		if stored.DecisionID != "decision-postgres" || stored.Metadata["account"] != "acct_1" {
+			t.Fatalf("unexpected stored event payload: %#v", stored)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for postgres event insert")
+	}
+
+	if err := sink.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+}
+
+func assertNamedValue(t *testing.T, got driver.NamedValue, want string) {
+	t.Helper()
+	if got.Value != want {
+		t.Fatalf("arg %d = %v, want %q", got.Ordinal, got.Value, want)
+	}
+}
+
+type eventTestExec struct {
+	query string
+	args  []driver.NamedValue
+}
+
+type eventTestConnector struct {
+	execs chan eventTestExec
+}
+
+func (c eventTestConnector) Connect(context.Context) (driver.Conn, error) {
+	return eventTestConn(c), nil
+}
+
+func (eventTestConnector) Driver() driver.Driver {
+	return eventTestDriver{}
+}
+
+type eventTestDriver struct{}
+
+func (eventTestDriver) Open(string) (driver.Conn, error) {
+	return nil, errors.New("open is not used by sql.OpenDB")
+}
+
+type eventTestConn struct {
+	execs chan eventTestExec
+}
+
+func (eventTestConn) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("prepared statements are not supported")
+}
+
+func (eventTestConn) Close() error { return nil }
+
+func (eventTestConn) Begin() (driver.Tx, error) {
+	return nil, errors.New("transactions are not supported")
+}
+
+func (c eventTestConn) ExecContext(_ context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
+	c.execs <- eventTestExec{
+		query: query,
+		args:  append([]driver.NamedValue(nil), args...),
+	}
+	return driver.RowsAffected(1), nil
 }

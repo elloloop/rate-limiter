@@ -10,6 +10,7 @@ env:
   GO_VERSION: '1.26.3'
   GOLANGCI_LINT_VERSION: 'v2.12.1'
   GOVULNCHECK_VERSION: 'v1.1.4'
+  GRPCURL_VERSION: 'v1.9.3'
 
 permissions:
   contents: read
@@ -74,8 +75,8 @@ jobs:
         env:
           QUOTA_TEST_REDIS_URL: redis://localhost:6379/0
         run: bash scripts/run-coverage.sh
-      - name: Coverage gate (internal/ >= 62%)
-        run: bash scripts/coverage-gate.sh cover.out 62 internal/
+      - name: Coverage gate (internal/ + ratelimiterserver >= 90%)
+        run: bash scripts/coverage-gate.sh cover.out 90 internal/ ratelimiterserver
       - name: Coverage gate (per-package)
         run: bash scripts/coverage-gate.sh cover.out --config .coverage-gates.yml
 
@@ -158,7 +159,7 @@ jobs:
       - name: Install grpcurl
         run: |
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-          go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest
+          go install github.com/fullstorydev/grpcurl/cmd/grpcurl@${{ env.GRPCURL_VERSION }}
       - name: Run Docker Compose critical RPC e2e
         run: test/e2e/docker-compose-critical-rpcs.sh
 

@@ -16,6 +16,8 @@ env:
   GO_VERSION: '1.26.3'
   GOLANGCI_LINT_VERSION: 'v2.12.1'
   GOVULNCHECK_VERSION: 'v1.1.4'
+  BUF_VERSION: 'v1.70.0'
+  GRPCURL_VERSION: 'v1.9.3'
 
 permissions:
   contents: read
@@ -59,7 +61,7 @@ jobs:
       - name: Install buf and plugins
         run: |
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-          go install github.com/bufbuild/buf/cmd/buf@latest
+          go install github.com/bufbuild/buf/cmd/buf@${{ env.BUF_VERSION }}
           go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
           go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
       - name: buf lint
@@ -122,8 +124,8 @@ jobs:
         run: bash scripts/run-coverage.sh
       - name: Coverage summary
         run: go tool cover -func=cover.out | tail -n 20
-      - name: Coverage gate (internal/ + ratelimiterserver >= 62%)
-        run: bash scripts/coverage-gate.sh cover.out 62 internal/ ratelimiterserver
+      - name: Coverage gate (internal/ + ratelimiterserver >= 90%)
+        run: bash scripts/coverage-gate.sh cover.out 90 internal/ ratelimiterserver
       - name: Coverage gate (per-package)
         run: bash scripts/coverage-gate.sh cover.out --config .coverage-gates.yml
       - name: Upload coverage artifact
@@ -253,7 +255,7 @@ jobs:
       - name: Install grpcurl
         run: |
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-          go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest
+          go install github.com/fullstorydev/grpcurl/cmd/grpcurl@${{ env.GRPCURL_VERSION }}
       - name: Run Docker Compose critical RPC e2e
         run: test/e2e/docker-compose-critical-rpcs.sh
 

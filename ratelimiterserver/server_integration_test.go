@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -281,6 +282,137 @@ func TestDryRunAndExplainDoNotMutateCounters(t *testing.T) {
 	}
 	if explained.GetWouldAllow() {
 		t.Fatalf("expected explain to deny cost above limit: %v", explained)
+	}
+}
+
+func TestReserveDryRunDoesNotCreateReservationOrMutateCountersWithRedis(t *testing.T) {
+	ctx, svc, _ := newRedisBackedService(t)
+
+	limit := fixedDurationLimit("reserve_dry_run", 10)
+	resp, err := svc.Reserve(ctx, &quotav1.ReserveRequest{
+		RequestId:        "req-reserve-dry-run",
+		Context:          &quotav1.RequestContext{Product: "workspace", Environment: "test"},
+		Action:           limit.GetAction(),
+		ReserveCost:      7,
+		ReservationTtlMs: 60000,
+		Limits:           []*quotav1.Limit{limit},
+		Options:          &quotav1.RequestOptions{DryRun: true},
+	})
+	if err != nil {
+		t.Fatalf("dry-run reserve: %v", err)
+	}
+	if !resp.GetDecision().GetAllowed() || resp.GetDecision().GetReason() != quotav1.DecisionReason_DECISION_REASON_DRY_RUN {
+		t.Fatalf("expected dry-run reserve decision, got %v", resp.GetDecision())
+	}
+	if resp.GetReservation() != nil {
+		t.Fatalf("dry-run reserve returned a reservation: %v", resp.GetReservation())
+	}
+	assertUsed(t, ctx, svc, limit, 0)
+
+	real, err := svc.Reserve(ctx, &quotav1.ReserveRequest{
+		RequestId:        "req-reserve-after-dry-run",
+		Context:          &quotav1.RequestContext{Product: "workspace", Environment: "test"},
+		Action:           limit.GetAction(),
+		ReserveCost:      7,
+		ReservationTtlMs: 60000,
+		Limits:           []*quotav1.Limit{limit},
+	})
+	if err != nil {
+		t.Fatalf("reserve after dry-run: %v", err)
+	}
+	if !real.GetDecision().GetAllowed() || real.GetReservation() == nil {
+		t.Fatalf("expected real reservation after dry-run, got %v", real)
+	}
+	assertUsed(t, ctx, svc, limit, 7)
+}
+
+func TestLeaseDryRunDoesNotCreateLeaseOrConsumeConcurrencyWithRedis(t *testing.T) {
+	ctx, svc, _ := newRedisBackedService(t)
+
+	limit := concurrencyLimit(1)
+	resp, err := svc.AcquireLease(ctx, &quotav1.AcquireLeaseRequest{
+		RequestId:  "req-lease-dry-run",
+		Context:    &quotav1.RequestContext{Product: "workspace", Environment: "test"},
+		Action:     limit.GetAction(),
+		Limits:     []*quotav1.Limit{limit},
+		LeaseTtlMs: 60000,
+		Options:    &quotav1.RequestOptions{DryRun: true},
+	})
+	if err != nil {
+		t.Fatalf("dry-run acquire lease: %v", err)
+	}
+	if !resp.GetDecision().GetAllowed() || resp.GetDecision().GetReason() != quotav1.DecisionReason_DECISION_REASON_DRY_RUN {
+		t.Fatalf("expected dry-run lease decision, got %v", resp.GetDecision())
+	}
+	if resp.GetLease() != nil {
+		t.Fatalf("dry-run acquire returned a lease: %v", resp.GetLease())
+	}
+	assertUsed(t, ctx, svc, limit, 0)
+
+	real := acquireLease(t, ctx, svc, "req-lease-after-dry-run", limit)
+	if real.GetLease() == nil {
+		t.Fatalf("expected real lease after dry-run")
+	}
+	assertUsed(t, ctx, svc, limit, 1)
+}
+
+func TestContinuousBucketsRefillWithRedis(t *testing.T) {
+	ctx, svc, _ := newRedisBackedService(t)
+
+	tests := []struct {
+		name      string
+		algorithm quotav1.Algorithm
+	}{
+		{name: "token_bucket", algorithm: quotav1.Algorithm_ALGORITHM_TOKEN_BUCKET},
+		{name: "leaky_bucket", algorithm: quotav1.Algorithm_ALGORITHM_LEAKY_BUCKET},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			limit := bucketLimit("refill_"+tt.name, tt.algorithm, 10, 10, 20)
+			first, err := svc.Consume(ctx, &quotav1.ConsumeRequest{
+				RequestId: "req-refill-" + tt.name + "-first",
+				Context:   &quotav1.RequestContext{Product: "workspace", Environment: "test"},
+				Action:    limit.GetAction(),
+				Cost:      10,
+				Limits:    []*quotav1.Limit{limit},
+			})
+			if err != nil {
+				t.Fatalf("first consume: %v", err)
+			}
+			if !first.GetDecision().GetAllowed() {
+				t.Fatalf("expected first consume allowed: %v", first.GetDecision())
+			}
+
+			denied, err := svc.Consume(ctx, &quotav1.ConsumeRequest{
+				RequestId: "req-refill-" + tt.name + "-denied",
+				Context:   &quotav1.RequestContext{Product: "workspace", Environment: "test"},
+				Action:    limit.GetAction(),
+				Cost:      2,
+				Limits:    []*quotav1.Limit{limit},
+			})
+			if err != nil {
+				t.Fatalf("immediate consume: %v", err)
+			}
+			if denied.GetDecision().GetAllowed() {
+				t.Fatalf("expected exhausted bucket to deny: %v", denied.GetDecision())
+			}
+
+			time.Sleep(150 * time.Millisecond)
+			refilled, err := svc.Consume(ctx, &quotav1.ConsumeRequest{
+				RequestId: "req-refill-" + tt.name + "-refilled",
+				Context:   &quotav1.RequestContext{Product: "workspace", Environment: "test"},
+				Action:    limit.GetAction(),
+				Cost:      2,
+				Limits:    []*quotav1.Limit{limit},
+			})
+			if err != nil {
+				t.Fatalf("refilled consume: %v", err)
+			}
+			if !refilled.GetDecision().GetAllowed() {
+				t.Fatalf("expected refilled bucket to allow: %v", refilled.GetDecision())
+			}
+		})
 	}
 }
 
@@ -872,9 +1004,14 @@ func newRedisBackedService(t *testing.T) (context.Context, *Server, *rlredis.Bac
 	if redisURL == "" {
 		t.Skip("set QUOTA_TEST_REDIS_URL to run Redis integration tests")
 	}
+	parsed, err := url.Parse(redisURL)
+	if err != nil {
+		t.Fatalf("parse QUOTA_TEST_REDIS_URL: %v", err)
+	}
+	parsed.Path = "/1"
 
 	ctx := context.Background()
-	store, err := rlredis.New(ctx, redisURL)
+	store, err := rlredis.New(ctx, parsed.String())
 	if err != nil {
 		t.Fatalf("new redis store: %v", err)
 	}
