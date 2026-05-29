@@ -88,6 +88,29 @@ func TestRunHandlesNonServingCommands(t *testing.T) {
 	}
 }
 
+func TestRunPrintConfigCommand(t *testing.T) {
+	t.Setenv("QUOTA_REDIS_URL", "redis://localhost:6379/0")
+	t.Setenv("QUOTA_EVENT_SINK", "none")
+	t.Setenv("QUOTA_TLS_ENABLED", "false")
+	t.Setenv("QUOTA_MTLS_ENABLED", "false")
+
+	out := captureStdout(t, func() {
+		if err := run([]string{"print-config"}); err != nil {
+			t.Fatalf("run print-config: %v", err)
+		}
+	})
+	if !strings.Contains(out, `"EventSink": "none"`) {
+		t.Fatalf("print-config output missing event sink: %s", out)
+	}
+}
+
+func TestRunValidateLimitsCommand(t *testing.T) {
+	path := filepath.Join("..", "..", "examples", "limits", "workspace-email.yaml")
+	if err := run([]string{"validate-limits", path}); err != nil {
+		t.Fatalf("run validate-limits: %v", err)
+	}
+}
+
 func TestRunDefaultsToServeAndValidatesConfiguration(t *testing.T) {
 	t.Setenv("QUOTA_REDIS_MODE", "cluster")
 
@@ -274,11 +297,103 @@ func TestRunHealthProbeMarksNotServingOnCancel(t *testing.T) {
 	assertHealthStatus(t, healthServer, "quota.v1.QuotaService", healthgrpc.HealthCheckResponse_NOT_SERVING)
 }
 
+func TestRunHealthProbeUpdatesOnTicker(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	healthServer := health.NewServer()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	quota := newHealthService(t, &cmdHealthBackend{loaded: true})
+
+	go func() {
+		defer close(done)
+		runHealthProbe(ctx, healthServer, quota, logger, time.Millisecond)
+	}()
+
+	deadline := time.After(time.Second)
+	for {
+		resp, err := healthServer.Check(context.Background(), &healthgrpc.HealthCheckRequest{Service: "quota.v1.QuotaService"})
+		if err == nil && resp.GetStatus() == healthgrpc.HealthCheckResponse_SERVING {
+			break
+		}
+		select {
+		case <-deadline:
+			cancel()
+			t.Fatal("health probe did not mark service serving")
+		case <-time.After(time.Millisecond):
+		}
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("health probe did not stop after cancellation")
+	}
+}
+
 func TestRunReservationExpirySweeperStopsOnCancel(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	runReservationExpirySweeper(ctx, newHealthService(t, &cmdHealthBackend{}), logger, time.Hour, 100)
+}
+
+func TestRunReservationExpirySweeperLogsFailures(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	ctx, cancel := context.WithCancel(context.Background())
+	called := make(chan struct{})
+	store := &cmdHealthBackend{
+		expireErr:    errors.New("redis down"),
+		expireCalled: called,
+	}
+	done := make(chan struct{})
+	quota := newHealthService(t, store)
+
+	go func() {
+		defer close(done)
+		runReservationExpirySweeper(ctx, quota, logger, time.Hour, 100)
+	}()
+
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Fatal("sweeper did not call ExpireReservations")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("sweeper did not stop after cancellation")
+	}
+}
+
+func TestRunReservationExpirySweeperLogsExpirations(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	ctx, cancel := context.WithCancel(context.Background())
+	called := make(chan struct{})
+	store := &cmdHealthBackend{
+		expireResult: backend.ExpireReservationsResult{Expired: 2, Scanned: 2},
+		expireCalled: called,
+	}
+	done := make(chan struct{})
+	quota := newHealthService(t, store)
+
+	go func() {
+		defer close(done)
+		runReservationExpirySweeper(ctx, quota, logger, time.Hour, 100)
+	}()
+
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Fatal("sweeper did not call ExpireReservations")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("sweeper did not stop after cancellation")
+	}
 }
 
 func TestLimitYAMLToProto(t *testing.T) {
@@ -450,8 +565,11 @@ func assertHealthStatus(t *testing.T, healthServer *health.Server, service strin
 
 type cmdHealthBackend struct {
 	backend.Backend
-	pingErr error
-	loaded  bool
+	pingErr      error
+	loaded       bool
+	expireResult backend.ExpireReservationsResult
+	expireErr    error
+	expireCalled chan struct{}
 }
 
 func (b *cmdHealthBackend) Ping(context.Context) error {
@@ -468,5 +586,11 @@ func (b *cmdHealthBackend) LoadScripts(context.Context) error {
 }
 
 func (b *cmdHealthBackend) ExpireReservations(context.Context, string, time.Time, int64) (backend.ExpireReservationsResult, error) {
-	return backend.ExpireReservationsResult{}, nil
+	if b.expireCalled != nil {
+		select {
+		case b.expireCalled <- struct{}{}:
+		default:
+		}
+	}
+	return b.expireResult, b.expireErr
 }

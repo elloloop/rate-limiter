@@ -120,6 +120,38 @@ PY
   fi
 }
 
+require_limit_status_field_gt_zero() {
+  local json="$1"
+  local path="$2"
+  local limit_id="$3"
+  local field="$4"
+  local label="$5"
+  if ! JSON_INPUT="$json" python3 - "$path" "$limit_id" "$field" <<'PY'
+import json
+import os
+import sys
+
+path, limit_id, field = sys.argv[1:]
+data = json.loads(os.environ["JSON_INPUT"])
+for part in path.split("."):
+    data = data[part]
+for status in data:
+    if status.get("limitId") == limit_id:
+        value = int(status.get(field, "0"))
+        if value > 0:
+            sys.exit(0)
+        print(f"{limit_id}.{field} was {value}, want > 0", file=sys.stderr)
+        sys.exit(1)
+print(f"limit status {limit_id!r} not found at {path}", file=sys.stderr)
+sys.exit(1)
+PY
+  then
+    echo "expected $label $limit_id.$field to be greater than zero" >&2
+    echo "$json" >&2
+    exit 1
+  fi
+}
+
 export QUOTA_E2E_GRPC_PORT="$GRPC_PORT"
 export QUOTA_E2E_METRICS_PORT="$METRICS_PORT"
 
@@ -224,6 +256,30 @@ e2e_token_bucket_limit='{
   "limit": "10",
   "burst": "10",
   "refillRatePerSec": 0.001
+}'
+
+e2e_leaky_bucket_limit='{
+  "limitId": "e2e_leaky_bucket",
+  "scopeKey": "user:user_123",
+  "action": "workspace.leaky.consume",
+  "unit": "tokens",
+  "algorithm": "ALGORITHM_LEAKY_BUCKET",
+  "window": {"type": "WINDOW_TYPE_CONTINUOUS", "durationMs": "60000"},
+  "limit": "10",
+  "burst": "10",
+  "refillRatePerSec": 0.001
+}'
+
+e2e_gcra_limit='{
+  "limitId": "e2e_gcra",
+  "scopeKey": "user:user_123",
+  "action": "workspace.gcra.consume",
+  "unit": "requests",
+  "algorithm": "ALGORITHM_GCRA",
+  "window": {"type": "WINDOW_TYPE_CONTINUOUS", "durationMs": "60000"},
+  "limit": "1",
+  "burst": "1",
+  "refillRatePerSec": 2
 }'
 
 dry_run_limit='{
@@ -552,6 +608,70 @@ token_bucket_remaining_json="$(grpc Consume "{
 }")"
 require_contains "$token_bucket_remaining_json" '"allowed": true' "token bucket remaining consume response"
 require_limit_status_field "$token_bucket_remaining_json" "decision.limitStatuses" "e2e_token_bucket" "remaining" "0" "token bucket remaining consume response"
+
+leaky_bucket_first_json="$(grpc Consume "{
+  \"requestId\": \"req-e2e-leaky-bucket-first\",
+  \"context\": {\"product\": \"workspace\", \"environment\": \"test\"},
+  \"action\": \"workspace.leaky.consume\",
+  \"cost\": \"6\",
+  \"limits\": [$e2e_leaky_bucket_limit]
+}")"
+require_contains "$leaky_bucket_first_json" '"allowed": true' "leaky bucket first consume response"
+require_limit_status_field "$leaky_bucket_first_json" "decision.limitStatuses" "e2e_leaky_bucket" "remaining" "4" "leaky bucket first consume response"
+
+leaky_bucket_denied_json="$(grpc Consume "{
+  \"requestId\": \"req-e2e-leaky-bucket-denied\",
+  \"context\": {\"product\": \"workspace\", \"environment\": \"test\"},
+  \"action\": \"workspace.leaky.consume\",
+  \"cost\": \"5\",
+  \"limits\": [$e2e_leaky_bucket_limit]
+}")"
+require_not_contains "$leaky_bucket_denied_json" '"allowed": true' "leaky bucket denial response"
+require_contains "$leaky_bucket_denied_json" '"reason": "DECISION_REASON_LIMIT_EXCEEDED"' "leaky bucket denial response"
+require_limit_status_field "$leaky_bucket_denied_json" "decision.limitStatuses" "e2e_leaky_bucket" "remaining" "4" "leaky bucket denial response"
+
+leaky_bucket_remaining_json="$(grpc Consume "{
+  \"requestId\": \"req-e2e-leaky-bucket-remaining\",
+  \"context\": {\"product\": \"workspace\", \"environment\": \"test\"},
+  \"action\": \"workspace.leaky.consume\",
+  \"cost\": \"4\",
+  \"limits\": [$e2e_leaky_bucket_limit]
+}")"
+require_contains "$leaky_bucket_remaining_json" '"allowed": true' "leaky bucket remaining consume response"
+require_limit_status_field "$leaky_bucket_remaining_json" "decision.limitStatuses" "e2e_leaky_bucket" "remaining" "0" "leaky bucket remaining consume response"
+
+gcra_first_json="$(grpc Consume "{
+  \"requestId\": \"req-e2e-gcra-first\",
+  \"context\": {\"product\": \"workspace\", \"environment\": \"test\"},
+  \"action\": \"workspace.gcra.consume\",
+  \"cost\": \"2\",
+  \"limits\": [$e2e_gcra_limit]
+}")"
+require_contains "$gcra_first_json" '"allowed": true' "GCRA first consume response"
+require_limit_status_field "$gcra_first_json" "decision.limitStatuses" "e2e_gcra" "remaining" "1" "GCRA first consume response"
+
+gcra_denied_json="$(grpc Consume "{
+  \"requestId\": \"req-e2e-gcra-denied\",
+  \"context\": {\"product\": \"workspace\", \"environment\": \"test\"},
+  \"action\": \"workspace.gcra.consume\",
+  \"cost\": \"2\",
+  \"limits\": [$e2e_gcra_limit]
+}")"
+require_not_contains "$gcra_denied_json" '"allowed": true' "GCRA denial response"
+require_contains "$gcra_denied_json" '"reason": "DECISION_REASON_LIMIT_EXCEEDED"' "GCRA denial response"
+require_limit_status_field "$gcra_denied_json" "decision.limitStatuses" "e2e_gcra" "allowed" "false" "GCRA denial response"
+require_limit_status_field_gt_zero "$gcra_denied_json" "decision.limitStatuses" "e2e_gcra" "retryAfterMs" "GCRA denial response"
+
+sleep 1
+
+gcra_refilled_json="$(grpc Consume "{
+  \"requestId\": \"req-e2e-gcra-refilled\",
+  \"context\": {\"product\": \"workspace\", \"environment\": \"test\"},
+  \"action\": \"workspace.gcra.consume\",
+  \"cost\": \"1\",
+  \"limits\": [$e2e_gcra_limit]
+}")"
+require_contains "$gcra_refilled_json" '"allowed": true' "GCRA refilled consume response"
 
 reserve_dry_run_json="$(grpc Reserve "{
   \"requestId\": \"req-e2e-reserve-dry-run\",

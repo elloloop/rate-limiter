@@ -53,3 +53,10 @@ func TestDecisionResultRejectsMalformedEnvelope(t *testing.T) {
 		t.Fatal("expected malformed decision envelope to fail")
 	}
 }
+
+func TestDecisionResultRejectsWrongEnvelopeTypes(t *testing.T) {
+	var result DecisionResult
+	if err := json.Unmarshal([]byte(`{"cached":"true"}`), &result); err == nil {
+		t.Fatal("expected invalid decision envelope field type to fail")
+	}
+}

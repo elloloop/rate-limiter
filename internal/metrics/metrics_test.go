@@ -19,8 +19,12 @@ func TestHandlerExposesDocumentedMetrics(t *testing.T) {
 	m.RedisError()
 	m.IdempotencyHit()
 	m.ReservationInc()
+	m.ReservationInc()
+	m.ReservationDec()
 	m.ReservationsExpired(2)
 	m.LeaseInc()
+	m.LeaseInc()
+	m.LeaseDec()
 	m.Overage()
 
 	req := httptest.NewRequest("GET", "/metrics", nil)
@@ -89,6 +93,17 @@ func TestServeExitsWhenContextCanceled(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Serve did not exit after context cancellation")
+	}
+}
+
+func TestServeReturnsListenErrors(t *testing.T) {
+	m := New(nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := m.Serve(ctx, "127.0.0.1:notaport")
+	if err == nil {
+		t.Fatal("expected invalid bind address to fail")
 	}
 }
 
