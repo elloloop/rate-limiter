@@ -15,7 +15,7 @@ Prometheus metric exposition.
 ## Redis Integration Tests
 
 ```bash
-docker run --rm -p 16379:6379 redis:7.4-alpine
+docker run --rm -p 16379:6379 redis:7.4.2-alpine
 QUOTA_TEST_REDIS_URL=redis://localhost:16379/0 go test -race -count=1 ./...
 ```
 

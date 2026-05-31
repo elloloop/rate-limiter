@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"math/big"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -85,6 +86,17 @@ func TestRunHandlesNonServingCommands(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestMainReturnsForSuccessfulCommand(t *testing.T) {
+	oldArgs := os.Args
+	os.Args = []string{"quota-service", "version"}
+	t.Cleanup(func() { os.Args = oldArgs })
+
+	out := captureStdout(t, main)
+	if !strings.Contains(out, "quota-service") {
+		t.Fatalf("main version output = %q, want version banner", out)
 	}
 }
 
@@ -192,6 +204,66 @@ func TestServeReturnsGRPCListenErrorWithRedis(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "too many colons") && !strings.Contains(err.Error(), "missing port") && !strings.Contains(err.Error(), "invalid port") {
 		t.Fatalf("run serve error = %v, want bind failure", err)
+	}
+}
+
+func TestServeStartsAndStopsOnInterruptWithRedis(t *testing.T) {
+	redisURL := redisURLForStartupTest(t)
+	grpcAddr := freeTCPAddr(t)
+	metricsAddr := freeTCPAddr(t)
+	t.Setenv("QUOTA_REDIS_URL", redisURL)
+	t.Setenv("QUOTA_EVENT_SINK", "none")
+	t.Setenv("QUOTA_GRPC_BIND_ADDR", grpcAddr)
+	t.Setenv("QUOTA_METRICS_BIND_ADDR", metricsAddr)
+	t.Setenv("QUOTA_TLS_ENABLED", "false")
+	t.Setenv("QUOTA_MTLS_ENABLED", "false")
+
+	done := make(chan error, 1)
+	go func() {
+		done <- serve()
+	}()
+
+	waitForTCP(t, grpcAddr)
+
+	proc, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		t.Fatalf("find current process: %v", err)
+	}
+	if err := proc.Signal(os.Interrupt); err != nil {
+		t.Fatalf("interrupt serve: %v", err)
+	}
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("serve returned error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("serve did not stop after interrupt")
+	}
+}
+
+func TestServeStopsWhenMetricsServerFailsWithRedis(t *testing.T) {
+	redisURL := redisURLForStartupTest(t)
+	t.Setenv("QUOTA_REDIS_URL", redisURL)
+	t.Setenv("QUOTA_EVENT_SINK", "none")
+	t.Setenv("QUOTA_GRPC_BIND_ADDR", freeTCPAddr(t))
+	t.Setenv("QUOTA_METRICS_BIND_ADDR", "127.0.0.1:-1")
+	t.Setenv("QUOTA_TLS_ENABLED", "false")
+	t.Setenv("QUOTA_MTLS_ENABLED", "false")
+
+	done := make(chan error, 1)
+	go func() {
+		done <- serve()
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("serve returned error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("serve did not stop after metrics failure")
 	}
 }
 
@@ -479,6 +551,35 @@ func captureStdout(t *testing.T, fn func()) string {
 		t.Fatalf("close reader: %v", err)
 	}
 	return string(out)
+}
+
+func freeTCPAddr(t *testing.T) string {
+	t.Helper()
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen free tcp addr: %v", err)
+	}
+	addr := lis.Addr().String()
+	if err := lis.Close(); err != nil {
+		t.Fatalf("close free tcp listener: %v", err)
+	}
+	return addr
+}
+
+func waitForTCP(t *testing.T, addr string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 50*time.Millisecond)
+		if err == nil {
+			if err := conn.Close(); err != nil {
+				t.Fatalf("close tcp probe: %v", err)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for tcp listener %s", addr)
 }
 
 func redisURLForStartupTest(t *testing.T) string {

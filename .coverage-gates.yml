@@ -10,7 +10,7 @@ include:
   - ratelimiterserver
 
 packages:
-  cmd/quota-service: 85
+  cmd/quota-service: 95
   internal/config: 100
   internal/events: 90
   internal/keys: 100
@@ -18,4 +18,4 @@ packages:
   internal/metrics: 100
   ratelimiterserver: 100
   ratelimiterserver/backend: 100
-  ratelimiterserver/backend/redis: 90
+  ratelimiterserver/backend/redis: 98
