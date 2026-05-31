@@ -188,14 +188,10 @@ func updateHealthStatus(ctx context.Context, healthServer *health.Server, quota 
 	defer cancel()
 
 	status := healthgrpc.HealthCheckResponse_SERVING
-	redisStatus, err := quota.GetRedisStatus(probeCtx, &quotav1.GetRedisStatusRequest{})
-	if err != nil || !redisStatus.GetReachable() || redisStatus.GetMessage() != "ok" {
+	redisStatus, _ := quota.GetRedisStatus(probeCtx, &quotav1.GetRedisStatusRequest{})
+	if !redisStatus.GetReachable() || redisStatus.GetMessage() != "ok" {
 		status = healthgrpc.HealthCheckResponse_NOT_SERVING
-		if err != nil {
-			logger.Warn("health probe failed", "error", err)
-		} else {
-			logger.Warn("health probe not serving", "message", redisStatus.GetMessage())
-		}
+		logger.Warn("health probe not serving", "message", redisStatus.GetMessage())
 	}
 
 	healthServer.SetServingStatus("", status)

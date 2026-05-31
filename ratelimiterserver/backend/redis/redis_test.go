@@ -3,6 +3,7 @@ package redis
 import (
 	"context"
 	"errors"
+	"math"
 	"net/url"
 	"os"
 	"strings"
@@ -66,6 +67,63 @@ func TestNewRejectsUnreachableRedis(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "ping redis") {
 		t.Fatalf("expected ping error, got: %v", err)
+	}
+}
+
+func TestRedisHealthHelpersWithRedis(t *testing.T) {
+	ctx, store := newRedisTestBackend(t)
+
+	if err := store.Ping(ctx); err != nil {
+		t.Fatalf("Ping: %v", err)
+	}
+	loaded, err := store.ScriptsLoaded(ctx)
+	if err != nil {
+		t.Fatalf("ScriptsLoaded: %v", err)
+	}
+	if !loaded {
+		t.Fatal("ScriptsLoaded = false, want true")
+	}
+
+	if err := store.FlushScripts(ctx); err != nil {
+		t.Fatalf("FlushScripts: %v", err)
+	}
+	loaded, err = store.ScriptsLoaded(ctx)
+	if err != nil {
+		t.Fatalf("ScriptsLoaded after flush: %v", err)
+	}
+	if loaded {
+		t.Fatal("ScriptsLoaded after flush = true, want false")
+	}
+
+	store.mu.Lock()
+	store.scripts = map[string]string{}
+	store.mu.Unlock()
+	loaded, err = store.ScriptsLoaded(ctx)
+	if err != nil {
+		t.Fatalf("ScriptsLoaded empty map: %v", err)
+	}
+	if loaded {
+		t.Fatal("ScriptsLoaded empty map = true, want false")
+	}
+
+	if err := store.LoadScripts(ctx); err != nil {
+		t.Fatalf("reload scripts: %v", err)
+	}
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := store.ScriptsLoaded(canceled); err == nil {
+		t.Fatal("expected canceled context to fail ScriptsLoaded")
+	}
+}
+
+func TestLoadScriptsFailsWhenClientClosedWithRedis(t *testing.T) {
+	ctx, store := newRedisTestBackend(t)
+
+	if err := store.client.Close(); err != nil {
+		t.Fatalf("close redis client: %v", err)
+	}
+	if err := store.LoadScripts(ctx); err == nil {
+		t.Fatal("expected closed client to fail LoadScripts")
 	}
 }
 
@@ -164,6 +222,22 @@ func TestRedisReadHelpersWithRedis(t *testing.T) {
 	}
 }
 
+func TestRedisReadHelpersPropagateContextErrorsWithRedis(t *testing.T) {
+	ctx, store := newRedisTestBackend(t)
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+
+	if _, err := store.CounterValue(canceled, "counter:canceled"); err == nil {
+		t.Fatal("expected CounterValue to fail with canceled context")
+	}
+	if _, err := store.BucketState(canceled, "bucket:canceled"); err == nil {
+		t.Fatal("expected BucketState to fail with canceled context")
+	}
+	if _, err := store.ConcurrencyCount(canceled, "lease-set:canceled", time.Now()); err == nil {
+		t.Fatal("expected ConcurrencyCount to fail with canceled context")
+	}
+}
+
 func TestRedisReservationReadHelperWithRedis(t *testing.T) {
 	ctx, store := newRedisTestBackend(t)
 
@@ -201,6 +275,76 @@ func TestRedisReservationReadHelperWithRedis(t *testing.T) {
 	}
 	if _, err := store.GetReservation(ctx, "reservation:invalid"); err == nil {
 		t.Fatal("expected invalid stored reservation JSON to fail")
+	}
+}
+
+func TestScriptMethodsRejectUnmarshalableLimitOps(t *testing.T) {
+	store := &Backend{}
+	now := time.Unix(200, 0).UTC()
+	badOp := backend.LimitOp{
+		LimitID:          "bad-json",
+		RefillRatePerSec: math.NaN(),
+	}
+	reservation := &quotav1.Reservation{
+		ReservationId:   "reservation-bad-json",
+		CreatedAtUnixMs: now.UnixMilli(),
+		ExpiresAtUnixMs: now.Add(time.Minute).UnixMilli(),
+	}
+	lease := &quotav1.Lease{
+		LeaseId:         "lease-bad-json",
+		CreatedAtUnixMs: now.UnixMilli(),
+		ExpiresAtUnixMs: now.Add(time.Minute).UnixMilli(),
+	}
+
+	tests := []struct {
+		name string
+		call func() error
+	}{
+		{
+			name: "consume",
+			call: func() error {
+				_, err := store.Consume(context.Background(), "idem-bad-json-consume", now, []backend.LimitOp{badOp}, false, "decision-bad-json-consume")
+				return err
+			},
+		},
+		{
+			name: "reserve",
+			call: func() error {
+				_, err := store.Reserve(context.Background(), "idem-bad-json-reserve", now, []backend.LimitOp{badOp}, false, "reservation:bad-json", "reservation-expiry:bad-json", reservation, "decision-bad-json-reserve")
+				return err
+			},
+		},
+		{
+			name: "acquire_lease",
+			call: func() error {
+				_, err := store.AcquireLease(context.Background(), "idem-bad-json-acquire", "lease:bad-json", lease, time.Minute, []backend.LimitOp{badOp}, false, "decision-bad-json-acquire")
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.call(); err == nil {
+				t.Fatal("expected unmarshalable limit operation to fail")
+			}
+		})
+	}
+}
+
+func TestScriptMethodsRejectInvalidProtoJSONPayloads(t *testing.T) {
+	store := &Backend{}
+	now := time.Unix(200, 0).UTC()
+	op := validLimitOp(now, "nil-proto")
+	invalidUTF8 := string([]byte{0xff})
+	reservation := validReservation(now, invalidUTF8)
+	lease := validLease(now, invalidUTF8)
+
+	if _, err := store.Reserve(context.Background(), "idem-invalid-reservation-json", now, []backend.LimitOp{op}, false, "reservation:invalid-json", "reservation-expiry:invalid-json", reservation, "decision-invalid-reservation-json"); err == nil {
+		t.Fatal("expected invalid reservation JSON to fail Reserve")
+	}
+	if _, err := store.AcquireLease(context.Background(), "idem-invalid-lease-json", "lease:invalid-json", lease, time.Minute, []backend.LimitOp{op}, false, "decision-invalid-lease-json"); err == nil {
+		t.Fatal("expected invalid lease JSON to fail AcquireLease")
 	}
 }
 
@@ -326,6 +470,169 @@ func TestScriptMethodsPropagateRedisScriptErrorsWithRedis(t *testing.T) {
 	}
 }
 
+func TestScriptMethodsRejectMalformedScriptJSONWithRedis(t *testing.T) {
+	now := time.Unix(200, 0).UTC()
+	op := validLimitOp(now, "malformed-json")
+	reservation := validReservation(now, "reservation-malformed-json")
+	lease := validLease(now, "lease-malformed-json")
+
+	tests := []struct {
+		name   string
+		script string
+		call   func(context.Context, *Backend) error
+	}{
+		{
+			name:   "consume",
+			script: scriptConsume,
+			call: func(ctx context.Context, store *Backend) error {
+				_, err := store.Consume(ctx, "idem-malformed-consume", now, []backend.LimitOp{op}, false, "decision-malformed-consume")
+				return err
+			},
+		},
+		{
+			name:   "reserve",
+			script: scriptReserve,
+			call: func(ctx context.Context, store *Backend) error {
+				_, err := store.Reserve(ctx, "idem-malformed-reserve", now, []backend.LimitOp{op}, false, "reservation:malformed", "reservation-expiry:malformed", reservation, "decision-malformed-reserve")
+				return err
+			},
+		},
+		{
+			name:   "increment_reservation",
+			script: scriptIncrementReservation,
+			call: func(ctx context.Context, store *Backend) error {
+				_, err := store.IncrementReservation(ctx, "idem-malformed-increment", "reservation:malformed", "reservation-expiry:malformed", 1, now, "decision-malformed-increment")
+				return err
+			},
+		},
+		{
+			name:   "finalize_reservation",
+			script: scriptFinalizeReservation,
+			call: func(ctx context.Context, store *Backend) error {
+				_, err := store.FinalizeReservation(ctx, "idem-malformed-finalize", "reservation:malformed", "reservation-expiry:malformed", 1, now)
+				return err
+			},
+		},
+		{
+			name:   "release_reservation",
+			script: scriptReleaseReservation,
+			call: func(ctx context.Context, store *Backend) error {
+				_, err := store.ReleaseReservation(ctx, "idem-malformed-release-reservation", "reservation:malformed", "reservation-expiry:malformed", now)
+				return err
+			},
+		},
+		{
+			name:   "expire_reservations",
+			script: scriptExpireReservations,
+			call: func(ctx context.Context, store *Backend) error {
+				_, err := store.ExpireReservations(ctx, "reservation-expiry:malformed", now, 100)
+				return err
+			},
+		},
+		{
+			name:   "acquire_lease",
+			script: scriptAcquireLease,
+			call: func(ctx context.Context, store *Backend) error {
+				_, err := store.AcquireLease(ctx, "idem-malformed-acquire", "lease:malformed", lease, time.Minute, []backend.LimitOp{op}, false, "decision-malformed-acquire")
+				return err
+			},
+		},
+		{
+			name:   "renew_lease",
+			script: scriptRenewLease,
+			call: func(ctx context.Context, store *Backend) error {
+				_, err := store.RenewLease(ctx, "idem-malformed-renew", "lease:malformed", lease.GetLeaseId(), time.Minute, now)
+				return err
+			},
+		},
+		{
+			name:   "release_lease",
+			script: scriptReleaseLease,
+			call: func(ctx context.Context, store *Backend) error {
+				_, err := store.ReleaseLease(ctx, "idem-malformed-release-lease", "lease:malformed", lease.GetLeaseId())
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, store := newRedisTestBackend(t)
+			replaceScript(ctx, t, store, tt.script, `return "{"`)
+			if err := tt.call(ctx, store); err == nil {
+				t.Fatal("expected malformed script JSON to fail")
+			}
+		})
+	}
+}
+
+func TestReservationScriptMethodsRejectInvalidReservationPayloadWithRedis(t *testing.T) {
+	now := time.Unix(200, 0).UTC()
+
+	tests := []struct {
+		name   string
+		script string
+		body   string
+		call   func(context.Context, *Backend) error
+	}{
+		{
+			name:   "increment_reservation",
+			script: scriptIncrementReservation,
+			body:   `return '{"found":true,"active":true,"reserved_cost":1,"decision":{"allowed":true},"reservation":{"status":"RESERVATION_STATUS_NOT_REAL"}}'`,
+			call: func(ctx context.Context, store *Backend) error {
+				_, err := store.IncrementReservation(ctx, "idem-invalid-reservation-increment", "reservation:invalid", "reservation-expiry:invalid", 1, now, "decision-invalid-reservation-increment")
+				return err
+			},
+		},
+		{
+			name:   "finalize_reservation",
+			script: scriptFinalizeReservation,
+			body:   `return '{"found":true,"finalized":true,"reservation":{"status":"RESERVATION_STATUS_NOT_REAL"}}'`,
+			call: func(ctx context.Context, store *Backend) error {
+				_, err := store.FinalizeReservation(ctx, "idem-invalid-reservation-finalize", "reservation:invalid", "reservation-expiry:invalid", 1, now)
+				return err
+			},
+		},
+		{
+			name:   "release_reservation",
+			script: scriptReleaseReservation,
+			body:   `return '{"found":true,"released":true,"reservation":{"status":"RESERVATION_STATUS_NOT_REAL"}}'`,
+			call: func(ctx context.Context, store *Backend) error {
+				_, err := store.ReleaseReservation(ctx, "idem-invalid-reservation-release", "reservation:invalid", "reservation-expiry:invalid", now)
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, store := newRedisTestBackend(t)
+			replaceScript(ctx, t, store, tt.script, tt.body)
+			if err := tt.call(ctx, store); err == nil {
+				t.Fatal("expected invalid reservation payload to fail")
+			}
+		})
+	}
+}
+
+func TestEvalTextReturnsReloadErrorsWithRedis(t *testing.T) {
+	ctx, store := newRedisTestBackend(t)
+	if err := store.FlushScripts(ctx); err != nil {
+		t.Fatalf("FlushScripts: %v", err)
+	}
+	setScriptSHAAndBody(store, scriptConsume, "0000000000000000000000000000000000000000", "this is not lua")
+
+	now := time.Unix(200, 0).UTC()
+	op := validLimitOp(now, "reload-error")
+	_, err := store.Consume(ctx, "idem-reload-error", now, []backend.LimitOp{op}, false, "decision-reload-error")
+	if err == nil {
+		t.Fatal("expected script reload to fail")
+	}
+	if !strings.Contains(err.Error(), "reload consume.lua after NOSCRIPT") {
+		t.Fatalf("reload error = %v, want consume reload context", err)
+	}
+}
+
 func TestParseDecisionRejectsInvalidJSON(t *testing.T) {
 	if _, err := parseDecision("{"); err == nil {
 		t.Fatal("expected invalid decision JSON to fail")
@@ -406,4 +713,54 @@ func breakScript(store *Backend, script string) {
 	defer store.mu.Unlock()
 	store.scripts[script] = "0000000000000000000000000000000000000000"
 	store.scriptBodies[script] = `return redis.error_reply("forced script failure")`
+}
+
+func replaceScript(ctx context.Context, t *testing.T, store *Backend, script, body string) {
+	t.Helper()
+	sha, err := store.client.ScriptLoad(ctx, body).Result()
+	if err != nil {
+		t.Fatalf("load replacement script %s: %v", script, err)
+	}
+	setScriptSHAAndBody(store, script, sha, body)
+}
+
+func setScriptSHAAndBody(store *Backend, script, sha, body string) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	store.scripts[script] = sha
+	store.scriptBodies[script] = body
+}
+
+func validLimitOp(now time.Time, suffix string) backend.LimitOp {
+	return backend.LimitOp{
+		LimitID:       "limit-" + suffix,
+		Kind:          "counter",
+		ReadKeys:      []string{"counter:" + suffix},
+		WriteKey:      "counter:" + suffix,
+		Limit:         10,
+		Cost:          1,
+		ResetAtUnixMs: now.Add(time.Minute).UnixMilli(),
+		TTLMS:         int64(time.Minute / time.Millisecond),
+	}
+}
+
+func validReservation(now time.Time, id string) *quotav1.Reservation {
+	return &quotav1.Reservation{
+		ReservationId:   id,
+		Action:          "test.reserve",
+		ReservedCost:    1,
+		CreatedAtUnixMs: now.UnixMilli(),
+		ExpiresAtUnixMs: now.Add(time.Minute).UnixMilli(),
+		Status:          quotav1.ReservationStatus_RESERVATION_STATUS_ACTIVE,
+	}
+}
+
+func validLease(now time.Time, id string) *quotav1.Lease {
+	return &quotav1.Lease{
+		LeaseId:         id,
+		Action:          "test.lease",
+		CreatedAtUnixMs: now.UnixMilli(),
+		ExpiresAtUnixMs: now.Add(time.Minute).UnixMilli(),
+		Status:          quotav1.LeaseStatus_LEASE_STATUS_ACTIVE,
+	}
 }
