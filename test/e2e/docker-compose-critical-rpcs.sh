@@ -79,6 +79,47 @@ require_equal() {
   fi
 }
 
+postgres_query() {
+  local sql="$1"
+  docker compose -p "$PROJECT" -f "$COMPOSE_FILE" exec -T postgres \
+    psql -U quota -d quota -tAc "$sql"
+}
+
+wait_for_postgres_event_count() {
+  local want="$1"
+  local got=""
+  for _ in $(seq 1 60); do
+    if got="$(postgres_query "SELECT count(*) FROM quota_usage_events;" 2>/dev/null)" &&
+      [[ "$got" =~ ^[0-9]+$ ]] &&
+      (( got >= want )); then
+      return
+    fi
+    sleep 1
+  done
+  echo "expected at least $want persisted quota events, got ${got:-none}" >&2
+  docker compose -p "$PROJECT" -f "$COMPOSE_FILE" logs quota-service postgres >&2 || true
+  exit 1
+}
+
+require_postgres_scalar() {
+  local sql="$1"
+  local want="$2"
+  local label="$3"
+  local got
+  got="$(postgres_query "$sql")"
+  if [[ "$got" != "$want" ]]; then
+    echo "expected $label to be $want, got $got" >&2
+    exit 1
+  fi
+}
+
+require_postgres_event_count() {
+  local where="$1"
+  local want="$2"
+  local label="$3"
+  require_postgres_scalar "SELECT count(*) FROM quota_usage_events WHERE $where;" "$want" "$label"
+}
+
 require_limit_status_field() {
   local json="$1"
   local path="$2"
@@ -317,6 +358,37 @@ lease_expiry_limit='{
   "limitId": "lease_expiry_limit",
   "scopeKey": "user:user_123",
   "action": "workspace.expiring.lease",
+  "unit": "requests",
+  "algorithm": "ALGORITHM_CONCURRENCY",
+  "limit": "1"
+}'
+
+event_consume_limit='{
+  "limitId": "event_consume_limit",
+  "scopeKey": "event:e2e",
+  "action": "workspace.events.consume",
+  "unit": "requests",
+  "algorithm": "ALGORITHM_FIXED_WINDOW_DURATION",
+  "window": {"type": "WINDOW_TYPE_DURATION", "durationMs": "60000"},
+  "limit": "1"
+}'
+
+event_reserve_limit='{
+  "limitId": "event_reserve_limit",
+  "scopeKey": "event:e2e",
+  "action": "workspace.events.reserve",
+  "unit": "tokens",
+  "algorithm": "ALGORITHM_FIXED_WINDOW_DURATION",
+  "window": {"type": "WINDOW_TYPE_DURATION", "durationMs": "60000"},
+  "limit": "10",
+  "refundable": true,
+  "reservationExpiryPolicy": "RESERVATION_EXPIRY_POLICY_CHARGE_FULL"
+}'
+
+event_lease_limit='{
+  "limitId": "event_lease_limit",
+  "scopeKey": "event:e2e",
+  "action": "workspace.events.lease",
   "unit": "requests",
   "algorithm": "ALGORITHM_CONCURRENCY",
   "limit": "1"
@@ -1034,6 +1106,113 @@ renew_released_error="$(grpc_expect_error RenewLease "{
   \"extendTtlMs\": \"1000\"
 }")"
 require_contains "$renew_released_error" "lease is not active" "RenewLease released lease error"
+
+event_consume_json="$(grpc Consume "{
+  \"requestId\": \"req-e2e-event-consume-allowed\",
+  \"context\": {
+    \"product\": \"workspace\",
+    \"environment\": \"test\",
+    \"metadata\": {\"scenario\": \"postgres-e2e\"}
+  },
+  \"action\": \"workspace.events.consume\",
+  \"cost\": \"1\",
+  \"limits\": [$event_consume_limit],
+  \"options\": {\"emitEvent\": true}
+}")"
+require_contains "$event_consume_json" '"allowed": true' "event consume allow response"
+
+event_denied_json="$(grpc Consume "{
+  \"requestId\": \"req-e2e-event-consume-denied\",
+  \"context\": {
+    \"product\": \"workspace\",
+    \"environment\": \"test\",
+    \"metadata\": {\"scenario\": \"postgres-e2e\"}
+  },
+  \"action\": \"workspace.events.consume\",
+  \"cost\": \"1\",
+  \"limits\": [$event_consume_limit],
+  \"options\": {\"emitEvent\": true}
+}")"
+require_contains "$event_denied_json" '"reason": "DECISION_REASON_LIMIT_EXCEEDED"' "event consume denial response"
+
+event_reserve_json="$(grpc Reserve "{
+  \"requestId\": \"req-e2e-event-reserve\",
+  \"context\": {
+    \"product\": \"workspace\",
+    \"environment\": \"test\",
+    \"metadata\": {\"scenario\": \"postgres-e2e\"}
+  },
+  \"action\": \"workspace.events.reserve\",
+  \"reserveCost\": \"2\",
+  \"reservationTtlMs\": \"60000\",
+  \"limits\": [$event_reserve_limit],
+  \"options\": {\"emitEvent\": true}
+}")"
+require_contains "$event_reserve_json" '"allowed": true' "event reserve response"
+
+event_lease_json="$(grpc AcquireLease "{
+  \"requestId\": \"req-e2e-event-lease\",
+  \"context\": {
+    \"product\": \"workspace\",
+    \"environment\": \"test\",
+    \"metadata\": {\"scenario\": \"postgres-e2e\"}
+  },
+  \"action\": \"workspace.events.lease\",
+  \"limits\": [$event_lease_limit],
+  \"leaseTtlMs\": \"60000\",
+  \"options\": {\"emitEvent\": true}
+}")"
+require_contains "$event_lease_json" '"allowed": true' "event lease response"
+
+event_lease_denied_json="$(grpc AcquireLease "{
+  \"requestId\": \"req-e2e-event-lease-denied\",
+  \"context\": {
+    \"product\": \"workspace\",
+    \"environment\": \"test\",
+    \"metadata\": {\"scenario\": \"postgres-e2e\"}
+  },
+  \"action\": \"workspace.events.lease\",
+  \"limits\": [$event_lease_limit],
+  \"leaseTtlMs\": \"60000\",
+  \"options\": {\"emitEvent\": true}
+}")"
+require_contains "$event_lease_denied_json" '"reason": "DECISION_REASON_CONCURRENCY_EXCEEDED"' "event lease denial response"
+
+wait_for_postgres_event_count 5
+require_postgres_scalar "SELECT count(*) FROM quota_usage_events;" "5" "persisted quota event count"
+require_postgres_event_count "event_type = 'quota.consumed'" "1" "quota.consumed event count"
+require_postgres_event_count "event_type = 'quota.reserved'" "1" "quota.reserved event count"
+require_postgres_event_count "event_type = 'quota.lease_acquired'" "1" "quota.lease_acquired event count"
+require_postgres_event_count "event_type = 'quota.denied'" "2" "quota.denied event count"
+require_postgres_event_count "
+  request_id = 'req-e2e-event-consume-allowed'
+  AND product = 'workspace'
+  AND environment = 'test'
+  AND action = 'workspace.events.consume'
+  AND payload->>'allowed' = 'true'
+  AND payload->>'cost' = '1'
+  AND payload->'metadata'->>'scenario' = 'postgres-e2e'
+" "1" "persisted consume payload"
+require_postgres_event_count "
+  request_id = 'req-e2e-event-consume-denied'
+  AND event_type = 'quota.denied'
+  AND payload->>'allowed' = 'false'
+" "1" "persisted consume denial payload"
+require_postgres_event_count "
+  request_id = 'req-e2e-event-reserve'
+  AND event_type = 'quota.reserved'
+  AND payload ? 'reservation'
+" "1" "persisted reserve payload"
+require_postgres_event_count "
+  request_id = 'req-e2e-event-lease'
+  AND event_type = 'quota.lease_acquired'
+  AND payload ? 'lease'
+" "1" "persisted lease payload"
+require_postgres_event_count "
+  request_id = 'req-e2e-event-lease-denied'
+  AND event_type = 'quota.denied'
+  AND payload->>'allowed' = 'false'
+" "1" "persisted lease denial payload"
 
 metrics="$(curl -fsS "http://localhost:$METRICS_PORT/metrics")"
 require_contains "$metrics" 'quota_requests_total' "metrics output"

@@ -92,7 +92,7 @@ The service has no application-layer auth and no hand-written SDK, but the
 **Go** — import the generated client straight from the module:
 
 ```bash
-go get github.com/elloloop/rate-limiter@v0.4.5
+go get github.com/elloloop/rate-limiter@v0.4.6
 ```
 
 ```go

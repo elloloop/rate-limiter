@@ -108,6 +108,19 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 12
+      postgres:
+        image: postgres:16.13-alpine3.23
+        env:
+          POSTGRES_USER: quota
+          POSTGRES_PASSWORD: quota
+          POSTGRES_DB: quota
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U quota -d quota"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
@@ -123,11 +136,12 @@ jobs:
       - name: go test (race + coverage)
         env:
           QUOTA_TEST_REDIS_URL: redis://localhost:6379/0
+          QUOTA_TEST_POSTGRES_URL: postgres://quota:quota@localhost:5432/quota?sslmode=disable
         run: bash scripts/run-coverage.sh
       - name: Coverage summary
         run: go tool cover -func=cover.out | tail -n 20
-      - name: Coverage gate (internal/ + ratelimiterserver >= 95%)
-        run: bash scripts/coverage-gate.sh cover.out 95 internal/ ratelimiterserver
+      - name: Coverage gate (internal/ + ratelimiterserver >= 99%)
+        run: bash scripts/coverage-gate.sh cover.out 99 internal/ ratelimiterserver
       - name: Coverage gate (per-package)
         run: bash scripts/coverage-gate.sh cover.out --config .coverage-gates.yml
       - name: Upload coverage artifact

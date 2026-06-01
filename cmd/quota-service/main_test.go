@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -97,6 +98,31 @@ func TestMainReturnsForSuccessfulCommand(t *testing.T) {
 	out := captureStdout(t, main)
 	if !strings.Contains(out, "quota-service") {
 		t.Fatalf("main version output = %q, want version banner", out)
+	}
+}
+
+func TestMainExitsOnCommandError(t *testing.T) {
+	if os.Getenv("QUOTA_SERVICE_TEST_MAIN_ERROR") == "1" {
+		os.Args = []string{"quota-service", "does-not-exist"}
+		main()
+		return
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestMainExitsOnCommandError") //nolint:gosec // subprocess re-enters this test binary to assert main's os.Exit path.
+	cmd.Env = append(os.Environ(), "QUOTA_SERVICE_TEST_MAIN_ERROR=1")
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("main subprocess succeeded, want exit 1; output: %s", out)
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("main subprocess error = %T %v, want *exec.ExitError", err, err)
+	}
+	if exitErr.ExitCode() != 1 {
+		t.Fatalf("main subprocess exit code = %d, want 1; output: %s", exitErr.ExitCode(), out)
+	}
+	if !strings.Contains(string(out), `unknown command "does-not-exist"`) {
+		t.Fatalf("main subprocess output = %q, want unknown command error", out)
 	}
 }
 
@@ -459,6 +485,34 @@ func TestRunReservationExpirySweeperLogsExpirations(t *testing.T) {
 	case <-called:
 	case <-time.After(time.Second):
 		t.Fatal("sweeper did not call ExpireReservations")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("sweeper did not stop after cancellation")
+	}
+}
+
+func TestRunReservationExpirySweeperRunsOnTicker(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	ctx, cancel := context.WithCancel(context.Background())
+	called := make(chan struct{}, 2)
+	done := make(chan struct{})
+	quota := newHealthService(t, &cmdHealthBackend{expireCalled: called})
+
+	go func() {
+		defer close(done)
+		runReservationExpirySweeper(ctx, quota, logger, time.Millisecond, 100)
+	}()
+
+	for i := 0; i < 2; i++ {
+		select {
+		case <-called:
+		case <-time.After(time.Second):
+			cancel()
+			t.Fatal("sweeper did not run on ticker")
+		}
 	}
 	cancel()
 	select {

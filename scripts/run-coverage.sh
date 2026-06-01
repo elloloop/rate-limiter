@@ -2,8 +2,9 @@
 #
 # run-coverage.sh — produce a merged coverage profile (cover.out) for the
 # coverage gate. Redis-backed integration tests run inline when
-# QUOTA_TEST_REDIS_URL is set (CI sets it; locally start a Redis and export
-# it). Without it the Redis-dependent paths simply report lower coverage.
+# QUOTA_TEST_REDIS_URL is set. Postgres-backed event sink tests run when
+# QUOTA_TEST_POSTGRES_URL is set. CI sets both; locally start the services
+# and export the URLs printed by `make redis-up` and `make postgres-up`.
 
 set -euo pipefail
 
