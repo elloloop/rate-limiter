@@ -173,6 +173,13 @@ Source documentation lives in:
 - `docs-site/`
 - `quota/v1/quota.proto`
 
+## Contributing and Security
+
+- Contribution guide: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Code of conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- Security policy: [.github/SECURITY.md](.github/SECURITY.md)
+- Contributor license agreement: [CLA.md](CLA.md)
+
 ## Tests
 
 Run the fast unit suite:
