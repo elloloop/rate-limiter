@@ -7,17 +7,17 @@ import { Code } from "astro-expressive-code/components";
   <h1>Docker</h1>
   <p>The release image is published to GitHub Container Registry.</p>
 
-  <Code code={`docker pull ghcr.io/elloloop/rate-limiter:latest`} lang="bash" />
+  <Code code={`docker pull ghcr.io/elloloop/rate-limiter:v0.4.6`} lang="bash" />
 
   <h2>Run with Redis</h2>
   <Code code={`docker network create quota || true
-docker run -d --name quota-redis --network quota redis:7-alpine
+docker run -d --name quota-redis --network quota redis:7.4.2-alpine
 docker run --rm --name quota-service --network quota \\
   -p 8080:8080 -p 9090:9090 \\
   -e QUOTA_PRODUCT=workspace \\
   -e QUOTA_ENVIRONMENT=local \\
   -e QUOTA_REDIS_URL=redis://quota-redis:6379/0 \\
-  ghcr.io/elloloop/rate-limiter:latest`} lang="bash" />
+  ghcr.io/elloloop/rate-limiter:v0.4.6`} lang="bash" />
 
   <h2>Commands</h2>
   <ul>
@@ -26,4 +26,3 @@ docker run --rm --name quota-service --network quota \\
     <li><code>quota-service print-config</code></li>
   </ul>
 </DocsLayout>
-
