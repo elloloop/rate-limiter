@@ -1,6 +1,7 @@
 ---
+const currentVersion = "v0.4.6";
 const versions = [
-  { label: "v0.1 (latest)", current: true },
+  { label: `${currentVersion} (latest)`, current: true },
 ];
 ---
 
@@ -11,7 +12,7 @@ const versions = [
   <summary
     class="flex cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
   >
-    <span>v0.1</span>
+    <span>{currentVersion}</span>
     <svg
       width="10"
       height="10"
