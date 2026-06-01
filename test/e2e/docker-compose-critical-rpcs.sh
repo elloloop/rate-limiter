@@ -25,6 +25,10 @@ grpc() {
   grpcurl -plaintext -d "$payload" "localhost:$GRPC_PORT" "quota.v1.QuotaService/$method"
 }
 
+grpc_health() {
+  grpcurl -plaintext -d '{"service":"quota.v1.QuotaService"}' "localhost:$GRPC_PORT" grpc.health.v1.Health/Check
+}
+
 grpc_expect_error() {
   local method="$1"
   local payload="$2"
@@ -61,6 +65,62 @@ require_not_contains() {
     echo "$haystack" >&2
     exit 1
   fi
+}
+
+fail_with_service_logs() {
+  local message="$1"
+  local response="$2"
+  echo "$message" >&2
+  if [[ -n "$response" ]]; then
+    echo "$response" >&2
+  fi
+  docker compose -p "$PROJECT" -f "$COMPOSE_FILE" logs quota-service redis >&2 || true
+  exit 1
+}
+
+wait_for_redis_ok() {
+  local attempts="$1"
+  local message="$2"
+  local response=""
+  for _ in $(seq 1 "$attempts"); do
+    if response="$(grpc GetRedisStatus '{}' 2>/dev/null)" &&
+      grep -Fq '"reachable": true' <<<"$response" &&
+      grep -Fq '"message": "ok"' <<<"$response"; then
+      return
+    fi
+    sleep 1
+  done
+  fail_with_service_logs "$message" "$response"
+}
+
+wait_for_redis_unreachable() {
+  local attempts="$1"
+  local message="$2"
+  local response=""
+  for _ in $(seq 1 "$attempts"); do
+    if response="$(grpc GetRedisStatus '{}' 2>/dev/null)" &&
+      ! grep -Fq '"reachable": true' <<<"$response" &&
+      ! grep -Fq '"message": "ok"' <<<"$response"; then
+      return
+    fi
+    sleep 1
+  done
+  fail_with_service_logs "$message" "$response"
+}
+
+wait_for_health_status() {
+  local want="$1"
+  local attempts="$2"
+  local message="$3"
+  local response=""
+  for _ in $(seq 1 "$attempts"); do
+    if response="$(grpc_health 2>/dev/null)" &&
+      grep -Fq "\"status\": \"$want\"" <<<"$response"; then
+      return
+    fi
+    sleep 1
+  done
+  fail_with_service_logs "$message" "$response"
 }
 
 json_string_field() {
@@ -199,24 +259,16 @@ export QUOTA_E2E_METRICS_PORT="$METRICS_PORT"
 cleanup
 docker compose -p "$PROJECT" -f "$COMPOSE_FILE" up -d --build
 
-status_json=""
-for _ in $(seq 1 60); do
-  if status_json="$(grpcurl -plaintext -d '{}' "localhost:$GRPC_PORT" quota.v1.QuotaService/GetRedisStatus 2>/dev/null)" &&
-    grep -q '"reachable": true' <<<"$status_json" &&
-    grep -q '"message": "ok"' <<<"$status_json"; then
-    break
-  fi
-  sleep 1
-done
+wait_for_redis_ok 60 "quota service did not become ready"
+wait_for_health_status SERVING 30 "gRPC health did not report SERVING"
 
-if ! grep -q '"reachable": true' <<<"$status_json"; then
-  echo "quota service did not become ready" >&2
-  docker compose -p "$PROJECT" -f "$COMPOSE_FILE" logs >&2 || true
-  exit 1
-fi
+docker compose -p "$PROJECT" -f "$COMPOSE_FILE" stop redis >/dev/null
+wait_for_redis_unreachable 30 "quota service did not report Redis as unreachable after Redis stopped"
+wait_for_health_status NOT_SERVING 30 "gRPC health did not report NOT_SERVING while Redis was stopped"
 
-health_json="$(grpcurl -plaintext -d '{"service":"quota.v1.QuotaService"}' "localhost:$GRPC_PORT" grpc.health.v1.Health/Check)"
-require_contains "$health_json" '"status": "SERVING"' "gRPC health response"
+docker compose -p "$PROJECT" -f "$COMPOSE_FILE" start redis >/dev/null
+wait_for_redis_ok 60 "quota service did not recover Redis connectivity after Redis restarted"
+wait_for_health_status SERVING 30 "gRPC health did not report SERVING after Redis restarted"
 
 email_limit='{
   "limitId": "user_email_recipients_daily",

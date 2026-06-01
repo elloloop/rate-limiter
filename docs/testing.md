@@ -42,7 +42,9 @@ assistant product data. Coverage includes `GetRedisStatus`, `ValidateLimits`,
 `IncrementReservation`, `FinalizeReservation`, `ReleaseReservation`,
 `AcquireLease`, `GetLease`, `RenewLease`, and `ReleaseLease`, plus
 idempotency/denial behavior and Prometheus metrics exposure. The e2e test also
-checks the standard gRPC health service reports `SERVING`.
+checks the standard gRPC health service reports `SERVING`, then stops and
+restarts Redis to verify `GetRedisStatus` and gRPC health transition to an
+unhealthy state and recover.
 
 ## CI and Release Gates
 
