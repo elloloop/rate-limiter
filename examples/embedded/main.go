@@ -7,7 +7,7 @@
 //
 // Run it with:
 //
-//	docker run --rm -p 16399:6379 redis:7.4-alpine
+//	docker run --rm -p 16399:6379 redis:7.4.2-alpine
 //	go run ./examples/embedded
 //
 // Then exercise it:
