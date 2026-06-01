@@ -8,6 +8,8 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
   GO_VERSION: '1.26.3'
+  NODE_VERSION: '22.21.1'
+  PNPM_VERSION: '10.13.1'
   GOLANGCI_LINT_VERSION: 'v2.12.1'
   GOVULNCHECK_VERSION: 'v1.1.4'
   GRPCURL_VERSION: 'v1.9.3'
@@ -21,7 +23,7 @@ jobs:
   # ---------------------------------------------------------------------------
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v6
@@ -38,7 +40,7 @@ jobs:
 
   vuln:
     name: Vulnerability scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
@@ -53,7 +55,7 @@ jobs:
 
   test:
     name: Build + Test + Coverage
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
       redis:
@@ -82,7 +84,7 @@ jobs:
 
   smoke:
     name: Boot smoke
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
@@ -100,7 +102,7 @@ jobs:
 
   fuzz:
     name: Fuzz smoke
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v6
@@ -131,7 +133,7 @@ jobs:
 
   docker-smoke:
     name: Docker Smoke
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
@@ -148,7 +150,7 @@ jobs:
 
   e2e:
     name: Release E2E
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
@@ -168,7 +170,7 @@ jobs:
   # ---------------------------------------------------------------------------
   build-and-push:
     name: Build and Push Image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [lint, vuln, test, smoke, fuzz, docker-smoke, e2e]
     permissions:
       contents: read
@@ -250,7 +252,7 @@ jobs:
   # ---------------------------------------------------------------------------
   scan-image:
     name: Scan published image (Trivy)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [build-and-push]
     permissions:
       contents: read
@@ -287,7 +289,7 @@ jobs:
 
   verify-published-image:
     name: Verify Published Image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [build-and-push]
     permissions:
       contents: read
@@ -317,7 +319,7 @@ jobs:
 
   release-artifacts:
     name: GitHub Release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [build-and-push, verify-published-image]
     permissions:
       contents: write
@@ -373,22 +375,22 @@ jobs:
 
   docs:
     name: Verify Release Docs
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [release-artifacts]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
         with:
-          version: 10
+          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
           cache-dependency-path: docs-site/pnpm-lock.yaml
       - name: Install docs dependencies
         working-directory: docs-site
-        run: pnpm install --frozen-lockfile=false
+        run: pnpm install --frozen-lockfile
       - name: Build docs
         working-directory: docs-site
         run: pnpm build

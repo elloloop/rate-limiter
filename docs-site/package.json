@@ -2,6 +2,16 @@
   "name": "rate-limiter-docs",
   "type": "module",
   "version": "0.0.1",
+  "packageManager": "pnpm@10.13.1",
+  "pnpm": {
+    "overrides": {
+      "devalue": "5.8.1"
+    },
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "sharp"
+    ]
+  },
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
@@ -18,10 +28,5 @@
     "astro-expressive-code": "0.42.0",
     "astro-pagefind": "2.0.0",
     "tailwindcss": "3.4.19"
-  },
-  "pnpm": {
-    "overrides": {
-      "devalue": "5.8.1"
-    }
   }
 }

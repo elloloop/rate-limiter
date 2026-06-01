@@ -242,7 +242,7 @@ short_window_limit='{
   "action": "workspace.short_window.consume",
   "unit": "requests",
   "algorithm": "ALGORITHM_FIXED_WINDOW_DURATION",
-  "window": {"type": "WINDOW_TYPE_DURATION", "durationMs": "1000"},
+  "window": {"type": "WINDOW_TYPE_DURATION", "durationMs": "3000"},
   "limit": "2"
 }'
 
@@ -567,7 +567,7 @@ short_window_denied_json="$(grpc Consume "{
 }")"
 require_contains "$short_window_denied_json" '"reason": "DECISION_REASON_LIMIT_EXCEEDED"' "short fixed-window denial response"
 
-sleep 2
+sleep 4
 
 short_window_refreshed_json="$(grpc Consume "{
   \"requestId\": \"req-e2e-short-window-refreshed\",

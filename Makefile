@@ -15,6 +15,7 @@ SHELL := /bin/bash
 
 GOLANGCI_LINT_VERSION ?= v2.12.1
 GOVULNCHECK_VERSION   ?= v1.1.4
+REDIS_IMAGE           ?= redis:7.4.2-alpine
 
 GO            ?= go
 BUF           ?= buf
@@ -133,7 +134,7 @@ e2e: ## Docker-compose critical-RPC end-to-end test
 
 .PHONY: docs
 docs: ## Build the documentation site
-	cd docs-site && pnpm install --frozen-lockfile=false && pnpm build
+	cd docs-site && pnpm install --frozen-lockfile && pnpm build
 
 # ---------------------------------------------------------------------------
 # Local services (docker) for Redis-backed tests and development
@@ -141,7 +142,7 @@ docs: ## Build the documentation site
 
 .PHONY: redis-up
 redis-up: ## Start a throwaway Redis on localhost:6379 for local tests
-	docker run -d --rm -p 6379:6379 --name quota-redis redis:7.4-alpine
+	docker run -d --rm -p 6379:6379 --name quota-redis $(REDIS_IMAGE)
 	@echo "export QUOTA_TEST_REDIS_URL=redis://localhost:6379/0"
 
 .PHONY: redis-down

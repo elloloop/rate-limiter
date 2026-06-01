@@ -13,8 +13,11 @@ docker run --rm -p 8080:8080 -p 9090:9090 \
   -e QUOTA_PRODUCT=workspace \
   -e QUOTA_ENVIRONMENT=local \
   -e QUOTA_REDIS_URL=redis://host.docker.internal:6379/0 \
-  ghcr.io/elloloop/rate-limiter:latest
+  ghcr.io/elloloop/rate-limiter:0.4.5
 ```
+
+Use a version tag or digest for every deployment. The mutable `latest` tag is
+published for discovery, not for reproducible rollouts.
 
 ## Kubernetes
 

@@ -9,7 +9,9 @@ export default {
     // `bg-black/50` and `z-30` get purged and the mobile sidebar backdrop
     // becomes invisible — making the hamburger appear broken.
     "./node_modules/@refraction-ui/astro/dist/**/*.{astro,js,mjs,ts}",
+    "!./node_modules/@refraction-ui/astro/dist/ai/**/*.{js,mjs,ts}",
     "./node_modules/.pnpm/@refraction-ui+astro@*/node_modules/@refraction-ui/astro/dist/**/*.{astro,js,mjs,ts}",
+    "!./node_modules/.pnpm/@refraction-ui+astro@*/node_modules/@refraction-ui/astro/dist/ai/**/*.{js,mjs,ts}",
   ],
   presets: [refractionPreset],
   darkMode: "class",

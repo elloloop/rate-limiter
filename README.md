@@ -92,7 +92,7 @@ The service has no application-layer auth and no hand-written SDK, but the
 **Go** — import the generated client straight from the module:
 
 ```bash
-go get github.com/elloloop/rate-limiter@latest
+go get github.com/elloloop/rate-limiter@v0.4.5
 ```
 
 ```go
@@ -209,8 +209,9 @@ Docker Compose critical-RPC e2e, and a Trivy filesystem scan. CodeQL
 Push a `v*` tag to publish. The release re-runs every CI gate, then:
 
 - builds and pushes the multi-arch image
-  `ghcr.io/elloloop/rate-limiter:<version>` (and `:latest`) with SBOM and
-  provenance attestations;
+  `ghcr.io/elloloop/rate-limiter:<version>` with SBOM and provenance
+  attestations. A mutable `:latest` tag is also published for discovery;
+  production deployments should pin a version tag or digest.
 - signs each tag with cosign keyless OIDC;
 - scans the published image with Trivy (HIGH/CRITICAL gate, SARIF to GitHub
   Security);
