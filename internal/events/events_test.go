@@ -77,6 +77,76 @@ func TestNewPostgresFailsFastOnUnreachableDSN(t *testing.T) {
 	}
 }
 
+func TestNewPostgresWithRealDatabase(t *testing.T) {
+	dsn := os.Getenv("QUOTA_TEST_POSTGRES_URL")
+	if dsn == "" {
+		t.Skip("set QUOTA_TEST_POSTGRES_URL to run Postgres-backed event sink tests")
+	}
+
+	sink, err := New("postgres", dsn, nullLogger())
+	if err != nil {
+		t.Fatalf("New(postgres): %v", err)
+	}
+	t.Cleanup(func() {
+		if err := sink.Close(); err != nil {
+			t.Fatalf("close postgres sink: %v", err)
+		}
+	})
+
+	postgres, ok := sink.(*postgresSink)
+	if !ok {
+		t.Fatalf("New(postgres) returned %T, want *postgresSink", sink)
+	}
+
+	ctx := context.Background()
+	if _, err := postgres.db.ExecContext(ctx, "DELETE FROM quota_usage_events WHERE request_id = 'req-real-postgres'"); err != nil {
+		t.Fatalf("clear prior event: %v", err)
+	}
+
+	sink.Emit(ctx, Event{
+		EventType:   "quota.consumed",
+		Timestamp:   time.Unix(100, 0).UTC(),
+		RequestID:   "req-real-postgres",
+		DecisionID:  "decision-real-postgres",
+		Product:     "workspace",
+		Environment: "test",
+		Action:      "workspace.events.consume",
+		Unit:        "requests",
+		Cost:        1,
+		Allowed:     true,
+		Metadata:    map[string]string{"scenario": "postgres-unit"},
+	})
+
+	deadline := time.After(5 * time.Second)
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		var count int
+		err := postgres.db.QueryRowContext(ctx, `
+SELECT count(*)
+FROM quota_usage_events
+WHERE event_type = 'quota.consumed'
+  AND request_id = 'req-real-postgres'
+  AND product = 'workspace'
+  AND environment = 'test'
+  AND action = 'workspace.events.consume'
+  AND payload->>'decision_id' = 'decision-real-postgres'
+  AND payload->'metadata'->>'scenario' = 'postgres-unit'`).Scan(&count)
+		if err != nil {
+			t.Fatalf("query inserted event: %v", err)
+		}
+		if count == 1 {
+			return
+		}
+
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for persisted Postgres event")
+		case <-tick.C:
+		}
+	}
+}
+
 func TestEventJSONShapeMatchesWireConvention(t *testing.T) {
 	event := Event{
 		EventType:   "consume",

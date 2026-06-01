@@ -2,9 +2,9 @@
 #
 # `make ci` runs the gating checks that don't need Docker: lint, module
 # tidiness, vulnerability scan, build, unit/Redis tests, boot smoke, and a
-# fuzz smoke. Redis-backed tests run when QUOTA_TEST_REDIS_URL is set —
-# `make redis-up` starts a throwaway Redis and exports nothing, so pass the
-# URL yourself or use `make test-cover` which expects it.
+# fuzz smoke. Redis-backed tests run when QUOTA_TEST_REDIS_URL is set.
+# Postgres-backed event sink tests run when QUOTA_TEST_POSTGRES_URL is set.
+# `make redis-up` and `make postgres-up` print the exports for local coverage.
 #
 # `make ci-full` adds the docker-compose critical-RPC e2e.
 #
@@ -16,6 +16,7 @@ SHELL := /bin/bash
 GOLANGCI_LINT_VERSION ?= v2.12.1
 GOVULNCHECK_VERSION   ?= v1.1.4
 REDIS_IMAGE           ?= redis:7.4.2-alpine
+POSTGRES_IMAGE        ?= postgres:16.13-alpine3.23
 
 GO            ?= go
 BUF           ?= buf
@@ -99,7 +100,7 @@ test: ## Unit + Redis tests with race detector (set QUOTA_TEST_REDIS_URL for Red
 .PHONY: test-cover
 test-cover: ## Coverage profile + aggregate and per-package gates (matches CI)
 	bash scripts/run-coverage.sh
-	bash scripts/coverage-gate.sh cover.out 95 internal/ ratelimiterserver
+	bash scripts/coverage-gate.sh cover.out 99 internal/ ratelimiterserver
 	bash scripts/coverage-gate.sh cover.out --config .coverage-gates.yml
 
 .PHONY: smoke
@@ -148,6 +149,19 @@ redis-up: ## Start a throwaway Redis on localhost:6379 for local tests
 .PHONY: redis-down
 redis-down: ## Stop the throwaway Redis
 	docker rm -f quota-redis >/dev/null 2>&1 || true
+
+.PHONY: postgres-up
+postgres-up: ## Start a throwaway Postgres on localhost:15432 for local tests
+	docker run -d --rm -p 15432:5432 --name quota-postgres \
+		-e POSTGRES_USER=quota \
+		-e POSTGRES_PASSWORD=quota \
+		-e POSTGRES_DB=quota \
+		$(POSTGRES_IMAGE)
+	@echo "export QUOTA_TEST_POSTGRES_URL=postgres://quota:quota@localhost:15432/quota?sslmode=disable"
+
+.PHONY: postgres-down
+postgres-down: ## Stop the throwaway Postgres
+	docker rm -f quota-postgres >/dev/null 2>&1 || true
 
 .PHONY: docker
 docker: ## Build the service image

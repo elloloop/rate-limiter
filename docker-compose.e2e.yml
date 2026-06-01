@@ -7,6 +7,18 @@ services:
       timeout: 2s
       retries: 20
 
+  postgres:
+    image: postgres:16.13-alpine3.23
+    environment:
+      POSTGRES_USER: quota
+      POSTGRES_PASSWORD: quota
+      POSTGRES_DB: quota
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quota -d quota"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
   quota-service:
     build:
       context: .
@@ -14,13 +26,16 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     environment:
       QUOTA_PRODUCT: e2e
       QUOTA_ENVIRONMENT: test
       QUOTA_GRPC_BIND_ADDR: 0.0.0.0:8080
       QUOTA_REDIS_URL: redis://redis:6379/0
       QUOTA_REDIS_MODE: single_primary
-      QUOTA_EVENT_SINK: none
+      QUOTA_EVENT_SINK: postgres
+      QUOTA_EVENT_DATABASE_URL: postgres://quota:quota@postgres:5432/quota?sslmode=disable
       QUOTA_METRICS_BIND_ADDR: 0.0.0.0:9090
       QUOTA_LOG_LEVEL: info
     ports:
