@@ -526,7 +526,7 @@ func TestRunReservationExpirySweeperStopsOnCancel(t *testing.T) {
 func TestRunReservationExpirySweeperLogsFailures(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	ctx, cancel := context.WithCancel(context.Background())
-	called := make(chan struct{})
+	called := make(chan struct{}, 1)
 	store := &cmdHealthBackend{
 		expireErr:    errors.New("redis down"),
 		expireCalled: called,
@@ -555,7 +555,7 @@ func TestRunReservationExpirySweeperLogsFailures(t *testing.T) {
 func TestRunReservationExpirySweeperLogsExpirations(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	ctx, cancel := context.WithCancel(context.Background())
-	called := make(chan struct{})
+	called := make(chan struct{}, 1)
 	store := &cmdHealthBackend{
 		expireResult: backend.ExpireReservationsResult{Expired: 2, Scanned: 2},
 		expireCalled: called,
