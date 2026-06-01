@@ -14,6 +14,8 @@ concurrency:
 
 env:
   GO_VERSION: '1.26.3'
+  NODE_VERSION: '22.21.1'
+  PNPM_VERSION: '10.13.1'
   GOLANGCI_LINT_VERSION: 'v2.12.1'
   GOVULNCHECK_VERSION: 'v1.1.4'
   BUF_VERSION: 'v1.70.0'
@@ -28,7 +30,7 @@ jobs:
   # ---------------------------------------------------------------------------
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v6
@@ -50,7 +52,7 @@ jobs:
   # ---------------------------------------------------------------------------
   protobuf:
     name: Protobuf
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v6
@@ -76,7 +78,7 @@ jobs:
   # ---------------------------------------------------------------------------
   vuln:
     name: Vulnerability scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
@@ -94,7 +96,7 @@ jobs:
   # ---------------------------------------------------------------------------
   test:
     name: Build + Test + Coverage
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
       redis:
@@ -143,7 +145,7 @@ jobs:
   # ---------------------------------------------------------------------------
   smoke:
     name: Boot smoke
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
@@ -164,7 +166,7 @@ jobs:
   # ---------------------------------------------------------------------------
   fuzz:
     name: Fuzz smoke
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v6
@@ -198,21 +200,21 @@ jobs:
   # ---------------------------------------------------------------------------
   docs:
     name: Docs Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
         with:
-          version: 10
+          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
           cache-dependency-path: docs-site/pnpm-lock.yaml
       - name: Install docs dependencies
         working-directory: docs-site
-        run: pnpm install --frozen-lockfile=false
+        run: pnpm install --frozen-lockfile
       - name: Build docs
         working-directory: docs-site
         run: pnpm build
@@ -222,7 +224,7 @@ jobs:
   # ---------------------------------------------------------------------------
   docker:
     name: Docker Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
@@ -244,7 +246,7 @@ jobs:
   # ---------------------------------------------------------------------------
   e2e:
     name: Docker Compose E2E
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
@@ -264,7 +266,7 @@ jobs:
   # ---------------------------------------------------------------------------
   security:
     name: Filesystem Vulnerability Scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v6
@@ -282,7 +284,7 @@ jobs:
   # ---------------------------------------------------------------------------
   all-checks:
     name: All Checks Passed
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [lint, protobuf, vuln, test, smoke, fuzz, docs, docker, e2e, security]
     if: always()
     steps:
