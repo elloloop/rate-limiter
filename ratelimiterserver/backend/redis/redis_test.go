@@ -70,6 +70,46 @@ func TestNewRejectsUnreachableRedis(t *testing.T) {
 	}
 }
 
+func TestNewReturnsScriptLoadErrorWithRedis(t *testing.T) {
+	adminURL := os.Getenv("QUOTA_TEST_REDIS_URL")
+	if adminURL == "" {
+		t.Skip("set QUOTA_TEST_REDIS_URL to run Redis integration tests")
+	}
+	parsed, err := url.Parse(adminURL)
+	if err != nil {
+		t.Fatalf("parse QUOTA_TEST_REDIS_URL: %v", err)
+	}
+	parsed.Path = "/2"
+
+	ctx := context.Background()
+	opts, err := redisclient.ParseURL(parsed.String())
+	if err != nil {
+		t.Fatalf("parse admin redis URL: %v", err)
+	}
+	admin := redisclient.NewClient(opts)
+	t.Cleanup(func() { _ = admin.Close() })
+
+	username := "quota_test_no_script_" + strings.NewReplacer("-", "_", ".", "_", ":", "_").Replace(t.Name())
+	password := "test-password"
+	if err := admin.Do(ctx, "ACL", "SETUSER", username, "reset", "on", ">"+password, "~*", "+@all", "-script|load").Err(); err != nil {
+		t.Fatalf("create restricted Redis user: %v", err)
+	}
+	t.Cleanup(func() { _ = admin.Do(context.Background(), "ACL", "DELUSER", username).Err() })
+
+	parsed.User = url.UserPassword(username, password)
+	store, err := New(ctx, parsed.String())
+	if err == nil {
+		_ = store.Close()
+		t.Fatal("expected script load permission error")
+	}
+	if store != nil {
+		t.Fatalf("New returned store %v with error %v, want nil store", store, err)
+	}
+	if !strings.Contains(err.Error(), "load consume.lua") {
+		t.Fatalf("New error = %v, want script load failure", err)
+	}
+}
+
 func TestRedisHealthHelpersWithRedis(t *testing.T) {
 	ctx, store := newRedisTestBackend(t)
 

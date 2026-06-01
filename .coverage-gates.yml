@@ -18,4 +18,4 @@ packages:
   internal/metrics: 100
   ratelimiterserver: 100
   ratelimiterserver/backend: 100
-  ratelimiterserver/backend/redis: 98
+  ratelimiterserver/backend/redis: 99

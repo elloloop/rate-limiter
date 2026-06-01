@@ -100,7 +100,7 @@ test: ## Unit + Redis tests with race detector (set QUOTA_TEST_REDIS_URL for Red
 .PHONY: test-cover
 test-cover: ## Coverage profile + aggregate and per-package gates (matches CI)
 	bash scripts/run-coverage.sh
-	bash scripts/coverage-gate.sh cover.out 99 internal/ ratelimiterserver
+	bash scripts/coverage-gate.sh cover.out 99.5 internal/ ratelimiterserver
 	bash scripts/coverage-gate.sh cover.out --config .coverage-gates.yml
 
 .PHONY: smoke
