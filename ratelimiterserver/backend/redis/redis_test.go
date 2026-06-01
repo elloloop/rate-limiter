@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"embed"
 	"errors"
 	"math"
 	"net/url"
@@ -38,6 +39,21 @@ func TestRequiredScriptsAreEmbedded(t *testing.T) {
 		if !strings.Contains(string(body), "redis.call") {
 			t.Fatalf("script %s does not appear to call Redis", name)
 		}
+	}
+}
+
+func TestLoadScriptsReturnsEmbeddedReadError(t *testing.T) {
+	original := scriptFS
+	var empty embed.FS
+	scriptFS = empty
+	t.Cleanup(func() { scriptFS = original })
+
+	err := (&Backend{}).LoadScripts(context.Background())
+	if err == nil {
+		t.Fatal("expected missing embedded script error")
+	}
+	if !strings.Contains(err.Error(), "scripts/consume.lua") {
+		t.Fatalf("LoadScripts error = %v, want missing consume script", err)
 	}
 }
 

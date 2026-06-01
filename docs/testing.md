@@ -49,7 +49,8 @@ unhealthy state and recover.
 ## CI and Release Gates
 
 CI runs protobuf lint/generation checks, Go tests with Redis and race detection,
-the docs build, Docker build smoke, Docker Compose critical RPC e2e, and Trivy
+100% coverage gates for `internal/`, `cmd/`, and `ratelimiterserver`, the docs
+build, Docker build smoke, Docker Compose critical RPC e2e, and Trivy
 high/critical filesystem scanning.
 
 Release tags run the same Redis integration and e2e gates before the multi-arch

@@ -9,7 +9,8 @@ import (
 	"os"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver with database/sql
+	"github.com/jackc/pgx/v5"
+	pgxstdlib "github.com/jackc/pgx/v5/stdlib"
 
 	quotav1 "github.com/elloloop/rate-limiter/gen/quota/v1"
 )
@@ -43,10 +44,11 @@ func New(kind, databaseURL string, logger *slog.Logger) (Sink, error) {
 	case "stdout":
 		return stdoutSink{logger: logger}, nil
 	case "postgres":
-		db, err := sql.Open("pgx", databaseURL)
+		connConfig, err := pgx.ParseConfig(databaseURL)
 		if err != nil {
 			return nil, err
 		}
+		db := pgxstdlib.OpenDB(*connConfig)
 		sink := &postgresSink{db: db, logger: logger}
 		if err := sink.init(context.Background()); err != nil {
 			_ = db.Close()

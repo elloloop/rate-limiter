@@ -46,8 +46,8 @@ type Server struct {
 //
 // New returns an error if Product or Environment is empty or if
 // Backend is nil. A non-nil Logger / EventSink / Metrics is used
-// as-is; nil installs the documented default (no-op logger, no-op
-// event sink, isolated private metrics registry).
+// as-is; nil installs the documented default (no-op logger, skipped
+// event emission, isolated private metrics registry).
 func New(_ context.Context, opts Options) (*Server, error) {
 	if opts.Product == "" {
 		return nil, errors.New("ratelimiterserver: Options.Product is required")
@@ -72,18 +72,13 @@ func New(_ context.Context, opts Options) (*Server, error) {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
 
-	sink := opts.EventSink
-	if sink == nil {
-		sink = noopEventSink{}
-	}
-
 	return &Server{
 		product:     opts.Product,
 		environment: opts.Environment,
 		redisMode:   redisMode,
 		prefix:      keys.Prefix(opts.Environment, opts.Product),
 		store:       opts.Backend,
-		events:      sink,
+		events:      opts.EventSink,
 		metrics:     metrics.New(opts.Metrics),
 		logger:      logger,
 	}, nil
@@ -952,6 +947,9 @@ func (s *Server) emit(ctx context.Context, eventType, requestID string, reqCtx *
 	if statuses := decision.GetLimitStatuses(); len(statuses) > 0 {
 		unit = statuses[0].GetUnit()
 	}
+	if s.events == nil {
+		return
+	}
 	s.events.Emit(ctx, Event{
 		EventType:   eventType,
 		Timestamp:   time.Now().UTC(),
@@ -998,13 +996,5 @@ func maxInt64(a, b int64) int64 {
 	}
 	return b
 }
-
-// noopEventSink is the default EventSink installed when Options
-// leaves it nil. It drops every event so the server's hot path
-// never blocks on absent wiring.
-type noopEventSink struct{}
-
-func (noopEventSink) Emit(context.Context, Event) {}
-func (noopEventSink) Close() error                { return nil }
 
 var _ quotav1.QuotaServiceServer = (*Server)(nil)

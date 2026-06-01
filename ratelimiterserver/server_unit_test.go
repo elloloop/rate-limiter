@@ -120,6 +120,39 @@ func TestConsumeDenialEmitsDeniedEvent(t *testing.T) {
 	}
 }
 
+func TestNilEventSinkDropsRequestedEvent(t *testing.T) {
+	limit := unitDurationLimit("nil_event_sink_limit", 10)
+	store := &consumeBackend{result: backend.DecisionResult{
+		DecisionID: "decision-nil-event",
+		Allowed:    true,
+		Statuses: []backend.ScriptStatus{{
+			LimitID:   limit.GetLimitId(),
+			Used:      1,
+			Remaining: 9,
+			Allowed:   true,
+			Message:   "allowed",
+		}},
+	}}
+	svc := newUnitService(t, store, nil)
+
+	resp, err := svc.Consume(context.Background(), &quotav1.ConsumeRequest{
+		RequestId: "req-nil-event",
+		Action:    limit.GetAction(),
+		Cost:      1,
+		Limits:    []*quotav1.Limit{limit},
+		Options:   &quotav1.RequestOptions{EmitEvent: true},
+	})
+	if err != nil {
+		t.Fatalf("Consume: %v", err)
+	}
+	if !resp.GetDecision().GetAllowed() {
+		t.Fatalf("unexpected decision: %v", resp.GetDecision())
+	}
+	if store.calls != 1 {
+		t.Fatalf("backend consume calls = %d, want 1", store.calls)
+	}
+}
+
 func TestConsumeInvalidCostSkipsBackendAndEvents(t *testing.T) {
 	store := &consumeBackend{}
 	events := &captureSink{}
@@ -1322,14 +1355,6 @@ func TestGCRAUsageUsesLimitAsDefaultBurst(t *testing.T) {
 	}
 	if remaining != 1 || retry != 0 {
 		t.Fatalf("GCRA default burst usage = remaining %d retry %d, want 1/0", remaining, retry)
-	}
-}
-
-func TestNoopEventSink(t *testing.T) {
-	var sink noopEventSink
-	sink.Emit(context.Background(), Event{})
-	if err := sink.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
 	}
 }
 

@@ -91,8 +91,8 @@ jobs:
           QUOTA_TEST_REDIS_URL: redis://localhost:6379/0
           QUOTA_TEST_POSTGRES_URL: postgres://quota:quota@localhost:5432/quota?sslmode=disable
         run: bash scripts/run-coverage.sh
-      - name: Coverage gate (internal/ + ratelimiterserver >= 99.5%)
-        run: bash scripts/coverage-gate.sh cover.out 99.5 internal/ ratelimiterserver
+      - name: Coverage gate (internal/ + ratelimiterserver = 100%)
+        run: bash scripts/coverage-gate.sh cover.out 100 internal/ ratelimiterserver
       - name: Coverage gate (per-package)
         run: bash scripts/coverage-gate.sh cover.out --config .coverage-gates.yml
 

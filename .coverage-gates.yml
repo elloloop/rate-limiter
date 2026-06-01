@@ -2,7 +2,7 @@
 # coverage so they act as a regression ratchet: a change that drops a
 # package below its floor fails CI. Raise a floor whenever coverage climbs
 # comfortably above it.
-default: 60
+default: 100
 
 include:
   - internal/
@@ -10,12 +10,12 @@ include:
   - ratelimiterserver
 
 packages:
-  cmd/quota-service: 96
+  cmd/quota-service: 100
   internal/config: 100
-  internal/events: 95
+  internal/events: 100
   internal/keys: 100
   internal/limits: 100
   internal/metrics: 100
   ratelimiterserver: 100
   ratelimiterserver/backend: 100
-  ratelimiterserver/backend/redis: 99
+  ratelimiterserver/backend/redis: 100
