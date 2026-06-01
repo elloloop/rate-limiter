@@ -25,8 +25,11 @@ import (
 	"github.com/elloloop/rate-limiter/internal/config"
 	"github.com/elloloop/rate-limiter/ratelimiterserver"
 	"github.com/elloloop/rate-limiter/ratelimiterserver/backend"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
 	healthgrpc "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 func TestValidateLimitsCommandAcceptsExamples(t *testing.T) {
@@ -230,6 +233,90 @@ func TestServeReturnsGRPCListenErrorWithRedis(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "too many colons") && !strings.Contains(err.Error(), "missing port") && !strings.Contains(err.Error(), "invalid port") {
 		t.Fatalf("run serve error = %v, want bind failure", err)
+	}
+}
+
+func TestServeConfigReturnsRateLimiterInitializationErrorWithRedis(t *testing.T) {
+	err := serveConfig(config.Config{
+		Product:         "",
+		Environment:     "test",
+		RedisURL:        redisURLForStartupTest(t),
+		RedisMode:       "single_primary",
+		EventSink:       "none",
+		GRPCBindAddr:    freeTCPAddr(t),
+		MetricsBindAddr: freeTCPAddr(t),
+	})
+	if err == nil {
+		t.Fatal("expected rate limiter initialization error")
+	}
+	if !strings.Contains(err.Error(), "ratelimiterserver init") {
+		t.Fatalf("serveConfig error = %v, want rate limiter initialization failure", err)
+	}
+}
+
+func TestServeGRPCReturnsListenerErrors(t *testing.T) {
+	want := errors.New("accept failed")
+	err := serveGRPC(grpc.NewServer(), errorListener{err: want})
+	if !errors.Is(err, want) {
+		t.Fatalf("serveGRPC error = %v, want %v", err, want)
+	}
+}
+
+func TestStopGRPCServerForcesStopWhenGracefulStopBlocks(t *testing.T) {
+	server := grpc.NewServer()
+	service := &blockingGRPCService{started: make(chan struct{})}
+	server.RegisterService(&blockingGRPCServiceDesc, service)
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	serveErrs := make(chan error, 1)
+	go func() {
+		serveErrs <- serveGRPC(server, lis)
+	}()
+
+	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("dial test grpc server: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := conn.Close(); err != nil {
+			t.Fatalf("close grpc client: %v", err)
+		}
+	})
+
+	rpcCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	rpcErrs := make(chan error, 1)
+	go func() {
+		rpcErrs <- conn.Invoke(rpcCtx, "/quota.test.Blocking/Hang", &emptypb.Empty{}, &emptypb.Empty{})
+	}()
+
+	select {
+	case <-service.started:
+	case <-time.After(time.Second):
+		t.Fatal("blocking RPC did not start")
+	}
+
+	stopGRPCServer(server, time.Nanosecond)
+
+	select {
+	case err := <-serveErrs:
+		if err != nil {
+			t.Fatalf("serveGRPC returned error after forced stop: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("gRPC server did not stop")
+	}
+
+	select {
+	case err := <-rpcErrs:
+		if err == nil {
+			t.Fatal("blocking RPC succeeded after forced stop, want cancellation")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("blocking RPC did not end after forced stop")
 	}
 }
 
@@ -716,6 +803,61 @@ func assertHealthStatus(t *testing.T, healthServer *health.Server, service strin
 	if resp.GetStatus() != want {
 		t.Fatalf("health status = %s, want %s", resp.GetStatus(), want)
 	}
+}
+
+type errorListener struct {
+	err error
+}
+
+func (l errorListener) Accept() (net.Conn, error) { return nil, l.err }
+func (errorListener) Close() error                { return nil }
+func (errorListener) Addr() net.Addr              { return testAddr("error-listener") }
+
+type testAddr string
+
+func (a testAddr) Network() string { return string(a) }
+func (a testAddr) String() string  { return string(a) }
+
+type blockingGRPCServer interface {
+	Hang(context.Context, *emptypb.Empty) (*emptypb.Empty, error)
+}
+
+type blockingGRPCService struct {
+	started chan struct{}
+}
+
+func (s *blockingGRPCService) Hang(ctx context.Context, _ *emptypb.Empty) (*emptypb.Empty, error) {
+	close(s.started)
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+var blockingGRPCServiceDesc = grpc.ServiceDesc{
+	ServiceName: "quota.test.Blocking",
+	HandlerType: (*blockingGRPCServer)(nil),
+	Methods: []grpc.MethodDesc{{
+		MethodName: "Hang",
+		Handler:    blockingGRPCHangHandler,
+	}},
+}
+
+//nolint:revive // gRPC method handlers use this generated-code parameter order.
+func blockingGRPCHangHandler(srv any, ctx context.Context, decode func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
+	req := new(emptypb.Empty)
+	if err := decode(req); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(blockingGRPCServer).Hang(ctx, req)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/quota.test.Blocking/Hang",
+	}
+	handler := func(ctx context.Context, req any) (any, error) {
+		return srv.(blockingGRPCServer).Hang(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, req, info, handler)
 }
 
 type cmdHealthBackend struct {

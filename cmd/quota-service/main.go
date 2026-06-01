@@ -68,7 +68,10 @@ func run(args []string) error {
 }
 
 func serve() error {
-	cfg := config.Load()
+	return serveConfig(config.Load())
+}
+
+func serveConfig(cfg config.Config) error {
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
@@ -128,19 +131,27 @@ func serve() error {
 	go func() {
 		<-ctx.Done()
 		logger.Info("shutting down grpc server")
-		done := make(chan struct{})
-		go func() {
-			server.GracefulStop()
-			close(done)
-		}()
-		select {
-		case <-done:
-		case <-time.After(10 * time.Second):
-			server.Stop()
-		}
+		stopGRPCServer(server, 10*time.Second)
 	}()
 
 	logger.Info("quota service listening", "grpc", cfg.GRPCBindAddr, "metrics", cfg.MetricsBindAddr, "version", version, "commit", commit)
+	return serveGRPC(server, lis)
+}
+
+func stopGRPCServer(server *grpc.Server, timeout time.Duration) {
+	done := make(chan struct{})
+	go func() {
+		server.GracefulStop()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(timeout):
+		server.Stop()
+	}
+}
+
+func serveGRPC(server *grpc.Server, lis net.Listener) error {
 	if err := server.Serve(lis); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 		return err
 	}
@@ -200,12 +211,15 @@ func updateHealthStatus(ctx context.Context, healthServer *health.Server, quota 
 
 func printConfig() error {
 	cfg := config.Load()
-	encoded, err := json.MarshalIndent(cfg.Redacted(), "", "  ")
-	if err != nil {
-		return err
-	}
+	encoded, _ := json.MarshalIndent(cfg.Redacted(), "", "  ")
 	fmt.Println(string(encoded))
 	return cfg.Validate()
+}
+
+type limitValidationOutput struct {
+	Valid    bool                         `json:"valid"`
+	Errors   []*quotav1.ValidationError   `json:"errors"`
+	Warnings []*quotav1.ValidationWarning `json:"warnings"`
 }
 
 func validateLimits(path string) error {
@@ -222,15 +236,12 @@ func validateLimits(path string) error {
 		converted = append(converted, limit.toProto())
 	}
 	errs, warnings := limits.Validate("", converted)
-	out := map[string]any{
-		"valid":    len(errs) == 0,
-		"errors":   errs,
-		"warnings": warnings,
+	out := limitValidationOutput{
+		Valid:    len(errs) == 0,
+		Errors:   errs,
+		Warnings: warnings,
 	}
-	encoded, err := json.MarshalIndent(out, "", "  ")
-	if err != nil {
-		return err
-	}
+	encoded, _ := json.MarshalIndent(out, "", "  ")
 	fmt.Println(string(encoded))
 	if len(errs) > 0 {
 		return errors.New("invalid limits")

@@ -140,8 +140,8 @@ jobs:
         run: bash scripts/run-coverage.sh
       - name: Coverage summary
         run: go tool cover -func=cover.out | tail -n 20
-      - name: Coverage gate (internal/ + ratelimiterserver >= 99.5%)
-        run: bash scripts/coverage-gate.sh cover.out 99.5 internal/ ratelimiterserver
+      - name: Coverage gate (internal/ + ratelimiterserver = 100%)
+        run: bash scripts/coverage-gate.sh cover.out 100 internal/ ratelimiterserver
       - name: Coverage gate (per-package)
         run: bash scripts/coverage-gate.sh cover.out --config .coverage-gates.yml
       - name: Upload coverage artifact

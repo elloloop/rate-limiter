@@ -52,10 +52,18 @@ QUOTA_TEST_REDIS_URL=redis://localhost:16379/0 go test -race -count=1 ./...`} la
 
   <h2>Release Gates</h2>
   <p>
-    Release tags run Redis integration tests and Docker Compose critical RPC
-    e2e before the multi-arch GHCR image is pushed. The release workflow then
-    inspects the published manifest, pulls the versioned GHCR image, and runs
-    <code>quota-service version</code> from that pulled image before creating
-    the GitHub Release.
+    CI requires protobuf lint/generation checks, Redis-backed Go tests with
+    race detection, 100% coverage gates for <code>internal/</code>,
+    <code>cmd/</code>, and <code>ratelimiterserver</code>, the docs build,
+    Docker build smoke, Docker Compose critical RPC e2e, and vulnerability
+    scanning.
+  </p>
+
+  <p>
+    Release tags run the same Redis integration tests and Docker Compose
+    critical RPC e2e before the multi-arch GHCR image is pushed. The release
+    workflow then inspects the published manifest, pulls the versioned GHCR
+    image, and runs <code>quota-service version</code> from that pulled image
+    before creating the GitHub Release.
   </p>
 </DocsLayout>
