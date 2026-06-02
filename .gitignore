@@ -3,10 +3,13 @@
 .vscode/
 
 bin/
+.cache/
 coverage.out
 cover.out
 cover.*.out
 nightly-reports/
+nightly-reports-local/
+go-test-reports/
 trivy-results.sarif
 dist/
 docs-site/dist/

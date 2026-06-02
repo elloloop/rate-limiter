@@ -1,7 +1,6 @@
 package ratelimiterserver_test
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -14,7 +13,7 @@ import (
 type noopBackend struct{ backend.Backend }
 
 func TestNewRequiresProduct(t *testing.T) {
-	_, err := ratelimiterserver.New(context.Background(), ratelimiterserver.Options{
+	_, err := ratelimiterserver.New(ratelimiterserver.Options{
 		Environment: "prod",
 		Backend:     noopBackend{},
 	})
@@ -24,7 +23,7 @@ func TestNewRequiresProduct(t *testing.T) {
 }
 
 func TestNewRequiresEnvironment(t *testing.T) {
-	_, err := ratelimiterserver.New(context.Background(), ratelimiterserver.Options{
+	_, err := ratelimiterserver.New(ratelimiterserver.Options{
 		Product: "app",
 		Backend: noopBackend{},
 	})
@@ -34,7 +33,7 @@ func TestNewRequiresEnvironment(t *testing.T) {
 }
 
 func TestNewRequiresBackend(t *testing.T) {
-	_, err := ratelimiterserver.New(context.Background(), ratelimiterserver.Options{
+	_, err := ratelimiterserver.New(ratelimiterserver.Options{
 		Product:     "app",
 		Environment: "prod",
 	})
@@ -43,13 +42,8 @@ func TestNewRequiresBackend(t *testing.T) {
 	}
 }
 
-// TestNewRejectsUnsupportedRedisMode is the regression test for the fix
-// closing the cmd-vs-library validation asymmetry: cmd already rejected
-// non-"single_primary" values; the library now does too. Without this,
-// an embedded consumer could pass garbage and see it echoed in
-// GetRedisStatus.
 func TestNewRejectsUnsupportedRedisMode(t *testing.T) {
-	_, err := ratelimiterserver.New(context.Background(), ratelimiterserver.Options{
+	_, err := ratelimiterserver.New(ratelimiterserver.Options{
 		Product:     "app",
 		Environment: "prod",
 		Backend:     noopBackend{},
@@ -64,7 +58,7 @@ func TestNewRejectsUnsupportedRedisMode(t *testing.T) {
 }
 
 func TestNewAcceptsEmptyRedisMode(t *testing.T) {
-	srv, err := ratelimiterserver.New(context.Background(), ratelimiterserver.Options{
+	srv, err := ratelimiterserver.New(ratelimiterserver.Options{
 		Product:     "app",
 		Environment: "prod",
 		Backend:     noopBackend{},
@@ -78,7 +72,7 @@ func TestNewAcceptsEmptyRedisMode(t *testing.T) {
 }
 
 func TestNewAcceptsSinglePrimaryRedisMode(t *testing.T) {
-	srv, err := ratelimiterserver.New(context.Background(), ratelimiterserver.Options{
+	srv, err := ratelimiterserver.New(ratelimiterserver.Options{
 		Product:     "app",
 		Environment: "prod",
 		Backend:     noopBackend{},

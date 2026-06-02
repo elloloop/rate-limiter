@@ -56,7 +56,7 @@ func run() error {
 	}
 	defer func() { _ = backend.Close() }()
 
-	rl, err := ratelimiterserver.New(ctx, ratelimiterserver.Options{
+	rl, err := ratelimiterserver.New(ratelimiterserver.Options{
 		Product:     "embedded-demo",
 		Environment: "local",
 		Backend:     backend,

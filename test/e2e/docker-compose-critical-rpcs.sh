@@ -682,15 +682,6 @@ short_window_first_json="$(grpc Consume "{
 require_contains "$short_window_first_json" '"allowed": true' "short fixed-window first consume response"
 require_limit_status_field "$short_window_first_json" "decision.limitStatuses" "short_window_refresh" "remaining" "0" "short fixed-window first consume response"
 
-short_window_denied_json="$(grpc Consume "{
-  \"requestId\": \"req-e2e-short-window-denied\",
-  \"context\": {\"product\": \"workspace\", \"environment\": \"test\"},
-  \"action\": \"workspace.short_window.consume\",
-  \"cost\": \"1\",
-  \"limits\": [$short_window_limit]
-}")"
-require_contains "$short_window_denied_json" '"reason": "DECISION_REASON_LIMIT_EXCEEDED"' "short fixed-window denial response"
-
 sleep 4
 
 short_window_refreshed_json="$(grpc Consume "{

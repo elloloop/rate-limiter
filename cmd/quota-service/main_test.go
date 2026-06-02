@@ -782,7 +782,7 @@ func writeTestCert(t *testing.T, dir, name string) (string, string) {
 
 func newHealthService(t *testing.T, store backend.Backend) *ratelimiterserver.Server {
 	t.Helper()
-	svc, err := ratelimiterserver.New(context.Background(), ratelimiterserver.Options{
+	svc, err := ratelimiterserver.New(ratelimiterserver.Options{
 		Product:     "test",
 		Environment: "test",
 		Backend:     store,

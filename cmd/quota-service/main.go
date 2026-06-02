@@ -91,7 +91,7 @@ func serveConfig(cfg config.Config) error {
 	}
 	defer func() { _ = eventSink.Close() }()
 
-	quota, err := ratelimiterserver.New(ctx, ratelimiterserver.Options{
+	quota, err := ratelimiterserver.New(ratelimiterserver.Options{
 		Product:     cfg.Product,
 		Environment: cfg.Environment,
 		Backend:     backend,

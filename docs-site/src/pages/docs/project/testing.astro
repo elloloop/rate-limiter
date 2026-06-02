@@ -5,65 +5,104 @@ import { Code } from "astro-expressive-code/components";
 
 <DocsLayout title="Testing">
   <h1>Testing</h1>
-  <p>The repository uses multiple gates before an image is published.</p>
-
-  <h2>Unit Tests</h2>
-  <Code code={`go test ./...`} lang="bash" />
   <p>
-    Unit tests cover configuration validation, YAML limit parsing, limit
-    validation, Redis key derivation, embedded Lua script presence, and command
-    helpers, plus Prometheus metric exposition.
+    The repository uses multiple local, CI, and release gates for the gRPC
+    service, Redis backend, Postgres event sink, background sweeper,
+    observability, Docker image, and protobuf contract.
   </p>
 
-  <h2>Redis Integration</h2>
-  <Code code={`docker run --rm -p 16379:6379 redis:7.4.2-alpine
-QUOTA_TEST_REDIS_URL=redis://localhost:16379/0 go test -race -count=1 ./...`} lang="bash" />
+  <h2>Harness Commands</h2>
+  <Code code={`make test-fast        # go test ./...
+make test-race        # go test -race ./...
+make test             # alias for test-race
+make test-integration # Redis/Postgres required; -tags=integration
+make test-cover       # 100% coverage gates
+make test-e2e         # Docker Compose public-RPC e2e
+make test-bench       # go test -bench=. -benchmem ./...
+make test-fuzz        # fuzz smoke for every Fuzz* target
+make vulncheck        # govulncheck
+make verify           # standard pre-merge checks
+make verify-ci        # proto + docs + CI gates + e2e + coverage`} lang="bash" />
+
+  <h2>Local Services</h2>
+  <Code code={`make redis-up
+export QUOTA_TEST_REDIS_URL=redis://localhost:6379/0
+
+make postgres-up
+export QUOTA_TEST_POSTGRES_URL=postgres://quota:quota@localhost:15432/quota?sslmode=disable`} lang="bash" />
   <p>
-    Redis-backed tests cover fixed windows, sliding windows, token buckets,
-    leaky buckets, GCRA, reservations, reservation increments and shrinkage,
-    expiry-policy refunds, finalization refunds, releases, reservation
-    overages, concurrency leases, lease expiry, idempotency, invalid
-    algorithm/RPC combinations,
-    usage inspection, explain behavior, a concurrent contention stress case for
-    Redis Lua atomicity, Redis script reload after
-    <code>SCRIPT FLUSH</code>, lifecycle idempotency metrics, and a real gRPC
-    client/server round trip.
+    Redis and Postgres images are pinned in the Makefile. Normal tests must not
+    call real third-party services; use package-local fakes, local containers,
+    or <code>httptest.Server</code> if an external HTTP client is added.
+  </p>
+
+  <h2>Test Layers</h2>
+  <p>
+    Unit and table-driven tests cover config loading, validation, key
+    derivation, request mapping, command helpers, and metrics helpers. Race
+    tests cover shared state, service methods, event sinks, background sweeper
+    behavior, Redis Lua atomicity, idempotency, and cancellation.
+  </p>
+  <p>
+    Redis integration tests cover fixed, duration, and sliding windows; token,
+    leaky, and GCRA buckets; reservations; reservation increments;
+    finalization, release, expiry-policy refunds; leases; current usage;
+    explain behavior; script reload after <code>SCRIPT FLUSH</code>; and Redis
+    health helpers. Postgres tests cover event schema setup, event persistence,
+    payload shape, error paths, and log behavior.
   </p>
 
   <h2>Docker Compose E2E</h2>
-  <Code code={`test/e2e/docker-compose-critical-rpcs.sh`} lang="bash" />
+  <Code code={`make test-e2e`} lang="bash" />
   <p>
-    The e2e test builds the Docker image, starts Redis and the service, and
-    exercises the critical public gRPC surface with <code>grpcurl</code> using
-    dummy workspace and assistant data. It covers
-    <code>GetRedisStatus</code>, <code>ValidateLimits</code>,
-    <code>Consume</code>, <code>GetCurrentUsage</code>,
-    <code>Explain</code>, <code>Reserve</code>,
-    <code>GetReservation</code>, <code>IncrementReservation</code>,
-    <code>FinalizeReservation</code>, <code>ReleaseReservation</code>,
-    <code>AcquireLease</code>,
+    The e2e script builds the Docker image, starts Redis, Postgres, and the
+    service, then exercises the public gRPC surface through <code>grpcurl</code>:
+    health, <code>GetRedisStatus</code>, <code>ValidateLimits</code>,
+    <code>Consume</code>, <code>GetCurrentUsage</code>, <code>Explain</code>,
+    <code>Reserve</code>, <code>GetReservation</code>,
+    <code>IncrementReservation</code>, <code>FinalizeReservation</code>,
+    <code>ReleaseReservation</code>, <code>AcquireLease</code>,
     <code>GetLease</code>, <code>RenewLease</code>, and
-    <code>ReleaseLease</code>, plus idempotency, denial behavior, and
-    Prometheus metrics. It also checks the standard gRPC health service reports
-    <code>SERVING</code>, then stops and restarts Redis to verify
-    <code>GetRedisStatus</code> and gRPC health transition to an unhealthy
-    state and recover.
+    <code>ReleaseLease</code>. It also verifies denial/idempotency paths,
+    Prometheus metrics, Postgres event rows, Redis outage detection, and Redis
+    recovery.
   </p>
+
+  <h2>Policy</h2>
+  <p>
+    Every future agent change must add or update all applicable tests. Pure
+    logic changes need unit and edge-case tests. Public gRPC changes need
+    service, validation, response, and error-path tests. Redis changes need
+    real Redis integration and race tests. Postgres changes need schema,
+    persistence, and error-path tests. Bug fixes need regression tests.
+    Concurrent code needs race, cancellation, and goroutine-leak-oriented tests
+    where feasible. Security-sensitive changes need negative and abuse-case
+    tests, including redaction checks for logs, errors, metrics, and responses.
+  </p>
+  <p>
+    HTTP routers, middleware, browser auth, file uploads, webhooks, queues, and
+    role-based authorization do not exist in this service today. If any of
+    those surfaces are added, add the matching helpers and positive/negative
+    tests in the same change.
+  </p>
+
+  <h2>Reusable Patterns</h2>
+  <ul>
+    <li><code>ratelimiterserver/server_unit_test.go</code>: fake backends and event sinks.</li>
+    <li><code>ratelimiterserver/server_integration_test.go</code>: Redis-backed services, metrics, cancellation, and refund assertions.</li>
+    <li><code>ratelimiterserver/backend/redis/redis_test.go</code>: real Redis backend setup and cleanup.</li>
+    <li><code>internal/events/events_test.go</code>: fake SQL drivers, Postgres integration, log capture, and payload assertions.</li>
+    <li><code>cmd/quota-service/main_test.go</code>: config, TLS, health, sweeper, logging, and gRPC serving behavior.</li>
+    <li><code>test/e2e/docker-compose-critical-rpcs.sh</code>: public RPC, JSON, logs, health, and Redis recovery helpers.</li>
+  </ul>
 
   <h2>Release Gates</h2>
   <p>
     CI requires protobuf lint/generation checks, Redis-backed Go tests with
     race detection, 100% coverage gates for <code>internal/</code>,
-    <code>cmd/</code>, and <code>ratelimiterserver</code>, the docs build,
-    Docker build smoke, Docker Compose critical RPC e2e, and vulnerability
-    scanning.
-  </p>
-
-  <p>
-    Release tags run the same Redis integration tests and Docker Compose
-    critical RPC e2e before the multi-arch GHCR image is pushed. The release
-    workflow then inspects the published manifest, pulls the versioned GHCR
-    image, and runs <code>quota-service version</code> from that pulled image
-    before creating the GitHub Release.
+    <code>cmd/</code>, and <code>ratelimiterserver</code>, docs build, Docker
+    build smoke, Docker Compose e2e, and vulnerability scanning. Release tags
+    run the same integration and e2e gates before the multi-arch GHCR image is
+    pushed, scanned, signed, pulled, and verified.
   </p>
 </DocsLayout>
