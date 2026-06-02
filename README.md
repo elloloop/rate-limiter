@@ -135,7 +135,7 @@ func main() {
     if err != nil { log.Fatal(err) }
     defer backend.Close()
 
-    rl, err := ratelimiterserver.New(ctx, ratelimiterserver.Options{
+    rl, err := ratelimiterserver.New(ratelimiterserver.Options{
         Product:     "myapp",
         Environment: "prod",
         Backend:     backend,
@@ -150,16 +150,15 @@ func main() {
 ```
 
 A runnable end-to-end example lives in `examples/embedded`; see its package
-doc for the env vars it accepts. `cmd/quota-service` is itself a thin shim
-over `ratelimiterserver.New`, so embedded and container modes share one
-service-layer wiring.
+doc for the env vars it accepts. `cmd/quota-service` loads environment
+configuration and calls `ratelimiterserver.New`, so embedded and container
+modes share one service-layer wiring.
 
-**Backends** — v0.4.0 ships exactly one backend (Redis); the algorithms
-depend on Redis Lua atomicity. The `ratelimiterserver/backend.Backend`
-interface keeps the door open for future drivers without breaking the
-`Server` / `Options` shape. The smallest supported "minimal" deployment
-is the embedded application plus a real Redis instance — there is no
-in-memory backend.
+**Backends** — the current release ships exactly one backend (Redis); the
+algorithms depend on Redis Lua atomicity. The server/backend boundary is
+intentionally shaped around Redis-backed quota, reservation, and lease
+operations. The smallest supported "minimal" deployment is the embedded
+application plus a real Redis instance — there is no in-memory backend.
 
 ## Documentation
 

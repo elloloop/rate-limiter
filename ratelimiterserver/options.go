@@ -46,8 +46,8 @@ type Options struct {
 	Backend backend.Backend
 
 	// RedisMode is reported back through the GetRedisStatus RPC
-	// for operator visibility. The only supported value in v0.4.0
-	// is "single_primary"; leaving it empty defaults to that.
+	// for operator visibility. The only supported value is
+	// "single_primary"; leaving it empty defaults to that.
 	RedisMode string
 
 	// EventSink receives quota-decision events emitted when a

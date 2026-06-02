@@ -1,4 +1,10 @@
 version: v2
+modules:
+  - path: .
+    excludes:
+      - docs-site/node_modules
+      - docs-site/dist
+      - dist
 lint:
   use:
     - STANDARD

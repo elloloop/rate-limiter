@@ -38,17 +38,15 @@ type Server struct {
 	logger  *slog.Logger
 }
 
-// New validates opts and constructs a Server. The construction ctx
-// is accepted for symmetry with future backends that may need it;
-// today's wiring does no I/O, so it is unused. The Server retains
-// the supplied backend and emits events, metrics, and logs against
-// the contexts passed to its RPC methods.
+// New validates opts and constructs a Server. The Server retains the supplied
+// backend and emits events, metrics, and logs against the contexts passed to
+// its RPC methods.
 //
 // New returns an error if Product or Environment is empty or if
 // Backend is nil. A non-nil Logger / EventSink / Metrics is used
 // as-is; nil installs the documented default (no-op logger, skipped
 // event emission, isolated private metrics registry).
-func New(_ context.Context, opts Options) (*Server, error) {
+func New(opts Options) (*Server, error) {
 	if opts.Product == "" {
 		return nil, errors.New("ratelimiterserver: Options.Product is required")
 	}
@@ -59,7 +57,7 @@ func New(_ context.Context, opts Options) (*Server, error) {
 		return nil, errors.New("ratelimiterserver: Options.Backend is required")
 	}
 	if opts.RedisMode != "" && opts.RedisMode != "single_primary" {
-		return nil, fmt.Errorf("ratelimiterserver: Options.RedisMode=%q is unsupported in v0.4.0; use \"single_primary\" or leave empty", opts.RedisMode)
+		return nil, fmt.Errorf("ratelimiterserver: Options.RedisMode=%q is unsupported; use \"single_primary\" or leave empty", opts.RedisMode)
 	}
 
 	redisMode := opts.RedisMode

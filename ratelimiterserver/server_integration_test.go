@@ -1020,7 +1020,7 @@ func newRedisBackedService(t *testing.T) (context.Context, *Server, *rlredis.Bac
 		t.Fatalf("flush redis: %v", err)
 	}
 
-	svc, err := New(ctx, Options{
+	svc, err := New(Options{
 		Product:     "workspace",
 		Environment: "test",
 		Backend:     store,

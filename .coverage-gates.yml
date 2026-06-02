@@ -1,7 +1,6 @@
-# Per-package coverage floors. Thresholds sit a few points under current
-# coverage so they act as a regression ratchet: a change that drops a
-# package below its floor fails CI. Raise a floor whenever coverage climbs
-# comfortably above it.
+# Per-package coverage floors. Current gates require complete statement
+# coverage for the public service, command entrypoint, and internal packages.
+# Keep them at 100 unless a deliberate design change makes that impossible.
 default: 100
 
 include:

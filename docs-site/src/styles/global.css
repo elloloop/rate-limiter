@@ -185,7 +185,7 @@
     max-width: 100%;
     overflow-x: auto;
   }
-  /* Fallback background for any non-Shiki <pre> (legacy raw blocks if any). */
+  /* Fallback background for any non-Shiki <pre> blocks. */
   .prose pre:not(.astro-code):not([class*="ec-"]):not(.expressive-code pre) {
     @apply relative my-6 overflow-x-auto rounded-lg border border-zinc-800/80 px-5 py-4 text-[13px] leading-[1.65] shadow-md;
     background-color: hsl(var(--code-bg));
@@ -197,7 +197,7 @@
     font-family: var(--font-mono);
     font-feature-settings: "ss02", "cv01", "cv02";
   }
-  /* Custom thin scrollbars inside legacy code blocks */
+  /* Custom thin scrollbars inside plain code blocks. */
   .prose pre::-webkit-scrollbar {
     height: 0.5rem;
   }

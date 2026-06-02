@@ -1,16 +1,14 @@
 // Package backend declares the protocol the ratelimiterserver speaks
 // to its persistence driver. The Backend interface and every
 // LimitOp / DecisionResult / *Result type used to exchange data
-// between the server and the store live here so a driver package
-// (today: ratelimiterserver/backend/redis) and the server can refer
-// to the same shapes without either importing the other for the
-// interface.
+// between the server and the store live here so the Redis driver and
+// the server can refer to the same shapes without either importing
+// the other for implementation details.
 //
-// v0.4.0 ships exactly one Backend implementation, the Redis driver
-// at ratelimiterserver/backend/redis. The interface is documented
-// rather than abstracted-for-its-own-sake: the algorithms depend on
-// Redis Lua atomicity and the interface exists so a second driver
-// can be added without breaking the public Server / Options shape.
+// The current release ships exactly one Backend implementation, the
+// Redis driver at ratelimiterserver/backend/redis. The algorithms
+// depend on Redis Lua atomicity, so the boundary is intentionally
+// shaped around Redis-backed quota, reservation, and lease operations.
 package backend
 
 import (

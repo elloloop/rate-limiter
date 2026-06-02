@@ -9,7 +9,7 @@
 //	if err != nil { return err }
 //	defer backend.Close()
 //
-//	rl, err := ratelimiterserver.New(ctx, ratelimiterserver.Options{
+//	rl, err := ratelimiterserver.New(ratelimiterserver.Options{
 //	    Product:     "myapp",
 //	    Environment: "prod",
 //	    Backend:     backend,
@@ -20,23 +20,22 @@
 //	quotav1.RegisterQuotaServiceServer(g, rl)
 //	g.Serve(lis)
 //
-// cmd/quota-service is a thin shim over this package: it loads
-// configuration from the environment, constructs a Redis backend,
-// builds a Server, and serves it on a *grpc.Server with reflection,
-// health, a metrics endpoint, and the reservation expiry sweeper.
-// The container and the embedded API run the same service-layer
+// cmd/quota-service loads configuration from the environment, constructs
+// a Redis backend, builds a Server, and serves it on a *grpc.Server with
+// reflection, health, a metrics endpoint, and the reservation expiry
+// sweeper. The container and the embedded API run the same service-layer
 // wiring.
 //
 // Backend posture:
 //
-//   - v0.4.0 ships exactly one backend, the Redis driver under
+//   - The current release ships exactly one backend, the Redis driver under
 //     ratelimiterserver/backend/redis. The rate-limit algorithms
 //     (sliding window, token / leaky / GCRA buckets, reservations,
 //     concurrency leases) depend on Redis Lua atomicity, so the
 //     abstraction is intentionally Redis-shaped.
-//   - The Backend interface exists to keep room for additional
-//     drivers without breaking the public Server / Options shape.
-//     Adding an in-memory or alternative-store backend is out of
-//     scope for v0.4.0; the smallest supported deployment is the
+//   - The server/backend boundary is intentionally shaped around the
+//     Redis-backed quota, reservation, and lease operations. Adding an
+//     in-memory or alternative-store backend is out of scope; the
+//     smallest supported deployment is the
 //     embedded application plus a real Redis instance.
 package ratelimiterserver

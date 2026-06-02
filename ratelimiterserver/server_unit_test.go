@@ -1360,7 +1360,7 @@ func TestGCRAUsageUsesLimitAsDefaultBurst(t *testing.T) {
 
 func newUnitService(t *testing.T, store backend.Backend, sink EventSink) *Server {
 	t.Helper()
-	svc, err := New(context.Background(), Options{
+	svc, err := New(Options{
 		Product:     "unit-product",
 		Environment: "unit-env",
 		Backend:     store,

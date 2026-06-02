@@ -1,10 +1,15 @@
 # Local mirror of .github/workflows/ci.yml.
 #
+# `make test-fast` runs the quick `go test ./...` suite. `make test-race`
+# adds the race detector. `make test-integration` requires Redis and Postgres
+# URLs and runs the same package set with the integration tag available for
+# future tests. `make test-e2e` runs the Docker Compose public-RPC flow.
+#
 # `make ci` runs the gating checks that don't need Docker: lint, module
-# tidiness, vulnerability scan, build, unit/Redis tests, boot smoke, and a
-# fuzz smoke. Redis-backed tests run when QUOTA_TEST_REDIS_URL is set.
-# Postgres-backed event sink tests run when QUOTA_TEST_POSTGRES_URL is set.
-# `make redis-up` and `make postgres-up` print the exports for local coverage.
+# tidiness, vulnerability scan, build, race tests, boot smoke, and a fuzz
+# smoke. Redis-backed tests run when QUOTA_TEST_REDIS_URL is set. Postgres-
+# backed event sink tests run when QUOTA_TEST_POSTGRES_URL is set. `make
+# redis-up` and `make postgres-up` print the exports for local coverage.
 #
 # `make ci-full` adds the docker-compose critical-RPC e2e.
 #
@@ -40,6 +45,14 @@ ci: lint tidy-check vuln build test smoke fuzz ## Run all CI gates that don't ne
 .PHONY: ci-full
 ci-full: ci e2e ## ci + docker-compose critical-RPC e2e
 	@echo "==> make ci-full: passed (incl. docker e2e)"
+
+.PHONY: verify
+verify: ci ## Standard pre-merge verification
+	@echo "==> make verify: passed"
+
+.PHONY: verify-ci
+verify-ci: proto docs ci-full test-cover ## Strict local mirror: proto, docs, CI gates, docker e2e, coverage
+	@echo "==> make verify-ci: passed"
 
 # ---------------------------------------------------------------------------
 # Individual gates — each maps to one job in .github/workflows/ci.yml
@@ -89,19 +102,39 @@ vuln: ## govulncheck against the configured CVE database
 	}
 	$(GOVULNCHECK) ./...
 
+.PHONY: vulncheck
+vulncheck: vuln ## Alias for vulnerability scan target
+
 .PHONY: build
 build: ## go build ./...
 	$(GO) build ./...
 
+.PHONY: test-fast
+test-fast: ## Fast tests: go test ./...
+	$(GO) test -count=1 -timeout=300s ./...
+
 .PHONY: test
-test: ## Unit + Redis tests with race detector (set QUOTA_TEST_REDIS_URL for Redis paths)
+test: test-race ## Alias for the race-enabled default test gate
+
+.PHONY: test-race
+test-race: ## Unit + integration-capable tests with race detector
 	$(GO) test -count=1 -race -timeout=600s ./...
+
+.PHONY: test-integration
+test-integration: ## Race tests with Redis/Postgres URLs required
+	@test -n "$$QUOTA_TEST_REDIS_URL" || { echo "QUOTA_TEST_REDIS_URL is required. Run make redis-up and export the printed URL." >&2; exit 1; }
+	@test -n "$$QUOTA_TEST_POSTGRES_URL" || { echo "QUOTA_TEST_POSTGRES_URL is required. Run make postgres-up and export the printed URL." >&2; exit 1; }
+	$(GO) test -count=1 -race -tags=integration -timeout=600s ./...
 
 .PHONY: test-cover
 test-cover: ## Coverage profile + aggregate and per-package gates (matches CI)
 	bash scripts/run-coverage.sh
 	bash scripts/coverage-gate.sh cover.out 100 internal/ ratelimiterserver
 	bash scripts/coverage-gate.sh cover.out --config .coverage-gates.yml
+
+.PHONY: test-bench
+test-bench: ## Benchmark suite
+	$(GO) test -run='^$$' -bench=. -benchmem ./...
 
 .PHONY: smoke
 smoke: ## Boot smoke tests (tests/smoke)
@@ -129,9 +162,15 @@ fuzz: ## Fuzz smoke — runs each fuzz target with seed corpus + 15s fuzzing
 		$(GO) test -run='^$$' -fuzz="^$${name}$$" -fuzztime=15s -parallel=4 -timeout=120s "./$$dir"; \
 	done
 
+.PHONY: test-fuzz
+test-fuzz: fuzz ## Alias for fuzz smoke target
+
 .PHONY: e2e
 e2e: ## Docker-compose critical-RPC end-to-end test
 	test/e2e/docker-compose-critical-rpcs.sh
+
+.PHONY: test-e2e
+test-e2e: e2e ## Alias for Docker Compose critical-RPC end-to-end test
 
 .PHONY: docs
 docs: ## Build the documentation site
@@ -194,4 +233,4 @@ install-tools: ## Install pinned versions of lint + vuln tooling
 
 .PHONY: help
 help: ## Show this help
-	@awk 'BEGIN {FS = ":.*?## "}; /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*?## "}; /^[a-zA-Z0-9_-]+:.*?## / {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)

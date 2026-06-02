@@ -1,8 +1,8 @@
 // Package redis is the Redis-backed implementation of the
-// backend.Backend interface. It is the only backend the
-// rate-limiter ships with in v0.4.0; the algorithms (sliding window,
-// token bucket, GCRA, reservation, lease) rely on Redis Lua scripts
-// for atomicity, so the abstraction is intentionally Redis-shaped.
+// backend.Backend interface. It is the only backend the current
+// release ships with; the algorithms (sliding window, token bucket,
+// GCRA, reservation, lease) rely on Redis Lua scripts for atomicity,
+// so the abstraction is intentionally Redis-shaped.
 //
 // Requirements:
 //
@@ -26,7 +26,7 @@
 //	if err != nil { return err }
 //	defer backend.Close()
 //
-//	srv, err := ratelimiterserver.New(ctx, ratelimiterserver.Options{
+//	srv, err := ratelimiterserver.New(ratelimiterserver.Options{
 //	    Product:     "myapp",
 //	    Environment: "prod",
 //	    Backend:     backend,
